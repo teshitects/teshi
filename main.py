@@ -1,2 +1,11 @@
-if __name__ == '__main__':
-    print('Hello Teshi')
+import sys
+
+from PySide6.QtWidgets import QApplication
+
+from views.project_select_page import ProjectSelectPage
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    project_select_page = ProjectSelectPage()
+    project_select_page.show()
+    sys.exit(app.exec())
