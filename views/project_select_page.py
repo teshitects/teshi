@@ -169,9 +169,11 @@ class ProjectSelectPage(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             project_manager = ProjectManager()
             project_manager.add_project(name_edit.text(), path_edit.text())
+            os.makedirs(path_edit.text(), exist_ok=True)
             self.close()
-            # Open the main project window here
-            print("New project created. Opening main window...")
+            from views.main_window import MainWindow
+            main_window = MainWindow(name_edit.text(), path_edit.text())
+            main_window.show()
 
     def show_open_project_dialog(self):
         """
@@ -186,8 +188,9 @@ class ProjectSelectPage(QWidget):
             project_manager.add_project(project_name, folder_path)
             print(f"Selected folder: {folder_path}")
             self.close()
-            # Open the main project window here
-            print("Project opened. Opening main window...")
+            from views.main_window import MainWindow
+            main_window = MainWindow(project_name, folder_path)
+            main_window.show()
             
     def open_project(self, path):
         """
@@ -197,5 +200,13 @@ class ProjectSelectPage(QWidget):
             path (str): The path of the project to open.
         """
         print(f"Opening project at: {path}")
-        self.close()
-        # Open the main project window here
+        from views.main_window import MainWindow
+        from PySide6.QtCore import Qt
+        project_name = os.path.basename(path)
+        self.main_window = MainWindow(project_name, path)  # Save as member variable
+        self.main_window.setAttribute(Qt.WA_DeleteOnClose, False)  # Prevent deletion on close
+        self.main_window.show()
+        # Ensure the new window is fully displayed before closing the current window
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: self.close() if self.isVisible() else None)
+
