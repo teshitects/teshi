@@ -18,6 +18,11 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
 
         # File Menu
+        file_menu = menubar.addMenu("File")
+        import_action = QAction("Import Test Cases", self)
+        file_menu.addAction(import_action)
+        import_action.triggered.connect(self._import_test_cases)
+
         help_menu = menubar.addMenu("Help")
         about_action = QAction("About", self)
         help_menu.addAction(about_action)
@@ -27,6 +32,12 @@ class MainWindow(QMainWindow):
         from views.widgets.about_dialog import AboutDialog
         about_dialog = AboutDialog()
         about_dialog.exec()
+
+    def _import_test_cases(self):
+        from PySide6.QtWidgets import QFileDialog
+        file_path, _ = QFileDialog.getOpenFileName(self, "Open Test Case File", "", "JSON Files (*.json);;All Files (*)")
+        if file_path:
+            pass
 
     def _setup_layout(self):
         # Main Widget
@@ -44,6 +55,14 @@ class MainWindow(QMainWindow):
         left_label.setAlignment(Qt.AlignCenter)
         left_label.setStyleSheet("font-size: 12pt;")
         left_layout.addWidget(left_label)
+
+        # Test Cases Section
+        test_cases_label = QLabel("Test Cases")
+        test_cases_label.setAlignment(Qt.AlignCenter)
+        test_cases_label.setStyleSheet("font-size: 12pt;")
+        left_layout.addWidget(test_cases_label)
+
+
         main_layout.addWidget(left_panel, stretch=1)
 
         # Right Splitter (Vertical)
