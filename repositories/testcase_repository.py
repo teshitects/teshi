@@ -37,16 +37,40 @@ class TestCaseRepository:
         """)
         self.conn.commit()
 
+    def _import_testcases(self, testcases):
+        """
+        Import test cases from a list and organize them by feature hierarchy
 
-    def create_testcase(self, testcase: TestCaseModel) -> None:
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            INSERT INTO testcases VALUES (
-                :uuid, :name, :number, :preconditions, :steps, :expected_results,
-                :notes, :priority, :domain, :stage, :feature, :automate, :tags, :extras
-            )
-        """, testcase.__dict__)
-        self.conn.commit()
+        Args:
+            testcases: List of test cases where each test case is represented as
+            [level, feature, uuid, name, number, preconditions, steps, expected_results, notes,
+            priority, domain, stage, automate, tags, extras]
+
+        Returns:
+            List of processed test cases with proper feature assignments
+        """
+
+        folder_list = [["Feature","1"]]
+        testcase_list = []
+        cur_level = 1
+        for testcase in testcases:
+            level = len(testcase[0])
+            feature = testcase[1]
+
+            if level < cur_level:
+                folder_list.pop(-1)
+                cur_level -= 1
+
+            if level >= cur_level:
+                if feature == None:
+                    testcase[1] = folder_list[-1][0]
+                    testcase_list.append(testcase)
+                else:
+                    folder_list.append([feature, level])
+
+            cur_level = level
+        return testcase_list
+
 
     def get_testcase_by_id(self, uuid: str) -> Optional[TestCaseModel]:
         cursor = self.conn.cursor()
@@ -56,5 +80,9 @@ class TestCaseRepository:
             return TestCaseModel(*row)
         return None
 
+
     def close(self):
         self.conn.close()
+
+    def import_testcases(self, testcase_list_rows, start_row, field_mapping):
+        pass
