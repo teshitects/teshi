@@ -7,11 +7,12 @@ authors = [
 ]
 license = {text = "Apache-2.0"}
 readme = "README.md"
-requires-python = "==3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     "pyside6 (>=6.10.0,<7.0.0)",
     "pytest (>=8.4.2,<9.0.0)",
-    "xlrd (>=2.0.2,<3.0.0)"
+    "xlrd (>=2.0.2,<3.0.0)",
+    "markdown (>=3.10,<4.0)"
 ]
 
 
