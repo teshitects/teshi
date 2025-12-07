@@ -5,12 +5,13 @@ from PySide6.QtWidgets import (
     QApplication, QTreeView, QMenu, QInputDialog, QMessageBox
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 import platform
 import subprocess
 
 
 class ProjectExplorer(QTreeView):
+    file_open_requested = Signal(str)
     def __init__(self, target_dir):
         super().__init__()
         self.setWindowTitle("Project Explorer")
@@ -30,9 +31,17 @@ class ProjectExplorer(QTreeView):
         self.model.appendRow(root_item)
         self.setModel(self.model)
 
+        self.doubleClicked.connect(self.on_double_click)
+
         # Enable right-click menu
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_menu)
+
+    def on_double_click(self, index):
+        item = self.model.itemFromIndex(index)
+        path = self.get_item_path(item)
+        if os.path.isfile(path) and path.endswith(".md"):
+            self.file_open_requested.emit(path)
 
     def open_menu(self, position):
         index = self.indexAt(position)

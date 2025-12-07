@@ -110,13 +110,32 @@ class MarkdownHighlighter(QSyntaxHighlighter):
 
 
 class EditorWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, file_path=None):
         super().__init__()
-        self.setWindowTitle("Real-time Preview Markdown Editor (Multi-level Headers + YAML)")
+        self.file_path = file_path
+        title = "Real-time Preview Markdown Editor (Multi-level Headers + YAML)"
+        if file_path:
+            title += f" - {file_path}"
+        self.setWindowTitle(title)
         self.resize(900, 650)
 
         self.editor = QTextEdit()
-        self.editor.setPlainText("""---
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    self.editor.setPlainText(f.read())
+            except FileNotFoundError:
+                self.editor.setPlainText("""---
+title: 'New File'
+level: 'Normal'
+domain: 'None'
+automated: false
+---
+
+# New File
+""")
+        else:
+            self.editor.setPlainText("""---
 title: 'Example Case'
 level: 'Normal'
 domain: 'Login'

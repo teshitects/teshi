@@ -1,8 +1,11 @@
+import os
+
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
-    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar
+    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QIcon
 
+from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
 
 
@@ -16,6 +19,8 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         self._setup_menubar()
         self._setup_layout()
+
+
 
     def _setup_menubar(self):
         menubar = self.menuBar()
@@ -65,9 +70,33 @@ class MainWindow(QMainWindow):
         action_project = toolbar.addAction(QIcon("assets/icons/project.png"), "Project")
         action_project.triggered.connect(lambda: self.toggle_dock(self.project_dock))
         self.project_dock = QDockWidget("Project", self)
-        self.project_dock.setWidget(ProjectExplorer(    self.project_path));
+        self.explorer = ProjectExplorer(    self.project_path)
+        self.project_dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
+
+        # central tab widget
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+        self.explorer.file_open_requested.connect(self.open_file_in_tab)
+
+    def open_file_in_tab(self, path):
+        # check if already open
+        for i in range(self.tabs.count()):
+            if self.tabs.tabToolTip(i) == path:
+                self.tabs.setCurrentIndex(i)
+                return
+
+        editor = QTextEdit()
+        with open(path, "r", encoding="utf-8") as f:
+            text = f.read()
+            text = text.replace("\\#", "#")
+            editor.setPlainText(text)
+
+        self.highlighter = MarkdownHighlighter(editor.document())
+        self.tabs.addTab(editor, os.path.basename(path))
+        self.tabs.setTabToolTip(self.tabs.count()-1, path)
+        self.tabs.setCurrentWidget(editor)
 
     def toggle_dock(self, dock):
         if dock.isVisible():
