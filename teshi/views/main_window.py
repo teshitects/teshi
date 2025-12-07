@@ -1,6 +1,9 @@
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
+    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QIcon
+
+from teshi.views.docks.project_explorer import ProjectExplorer
 
 
 class MainWindow(QMainWindow):
@@ -47,49 +50,27 @@ class MainWindow(QMainWindow):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
-        # Main Layout (Horizontal)
         main_layout = QHBoxLayout(main_widget)
 
-        # Left Panel (Project Navigation)
-        left_panel = QWidget()
-        left_panel.setStyleSheet("background-color: #2b2b2b; color: white;")
-        left_layout = QVBoxLayout(left_panel)
-        left_label = QLabel("Project Navigation")
-        left_label.setAlignment(Qt.AlignCenter)
-        left_label.setStyleSheet("font-size: 12pt;")
-        left_layout.addWidget(left_label)
+        toolbar = QToolBar("LeftToolbar", self)
+        toolbar.setOrientation(Qt.Vertical)
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setFixedWidth(60)
+        toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        toolbar.setIconSize(QSize(20, 20))
+        toolbar.setStyleSheet("padding: 5")
+        self.addToolBar(Qt.LeftToolBarArea, toolbar)
 
-        # Test Cases Section
-        test_cases_label = QLabel("Test Cases")
-        test_cases_label.setAlignment(Qt.AlignCenter)
-        test_cases_label.setStyleSheet("font-size: 12pt;")
-        left_layout.addWidget(test_cases_label)
+        action_project = toolbar.addAction(QIcon("assets/icons/project.png"), "Project")
+        action_project.triggered.connect(lambda: self.toggle_dock(self.project_dock))
+        self.project_dock = QDockWidget("Project", self)
+        self.project_dock.setWidget(ProjectExplorer(    self.project_path));
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
+        self.project_dock.hide()
 
-
-        main_layout.addWidget(left_panel, stretch=1)
-
-        # Right Splitter (Vertical)
-        right_splitter = QSplitter(Qt.Vertical)
-
-        # Editor Panel
-        editor_panel = QWidget()
-        editor_panel.setStyleSheet("background-color: #1e1e1e; color: white;")
-        editor_layout = QVBoxLayout(editor_panel)
-        editor_label = QLabel("Editor")
-        editor_label.setAlignment(Qt.AlignCenter)
-        editor_label.setStyleSheet("font-size: 12pt;")
-        editor_layout.addWidget(editor_label)
-        right_splitter.addWidget(editor_panel)
-
-        # Terminal Panel
-        terminal_panel = QWidget()
-        terminal_panel.setStyleSheet("background-color: #1e1e1e; color: white;")
-        terminal_layout = QVBoxLayout(terminal_panel)
-        terminal_label = QLabel("Terminal")
-        terminal_label.setAlignment(Qt.AlignCenter)
-        terminal_label.setStyleSheet("font-size: 12pt;")
-        terminal_layout.addWidget(terminal_label)
-        right_splitter.addWidget(terminal_panel)
-
-        main_layout.addWidget(right_splitter, stretch=4)
-
+    def toggle_dock(self, dock):
+        if dock.isVisible():
+            dock.hide()
+        else:
+            dock.show()
