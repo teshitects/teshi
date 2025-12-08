@@ -1,12 +1,13 @@
 import os
 
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
-    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar
-from PySide6.QtCore import Qt, QSize, QTimer
+    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar, QMessageBox
+from PySide6.QtCore import Qt, QSize, QTimer, QFileInfo
 from PySide6.QtGui import QAction, QIcon
 
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
+from teshi.views.widgets.editor_widget import EditorWidget
 
 
 class MainWindow(QMainWindow):
@@ -19,6 +20,7 @@ class MainWindow(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         self._setup_menubar()
         self._setup_layout()
+        self._setup_shortcuts()
 
 
 
@@ -77,7 +79,9 @@ class MainWindow(QMainWindow):
 
         # central tab widget
         self.tabs = QTabWidget()
+        self.tabs.setTabsClosable(True)  # ★ 关键 ★
         self.setCentralWidget(self.tabs)
+        self.tabs.tabCloseRequested.connect(self._close_tab_requested)
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
 
         # status bar
@@ -97,6 +101,39 @@ class MainWindow(QMainWindow):
         status_bar.addPermanentWidget(self.progress)
         self.show_message("Ready")
 
+    def _setup_shortcuts(self):
+        save_action = QAction(QIcon.fromTheme("document-save"), "Save", self)
+        save_action.setShortcut(Qt.CTRL | Qt.Key_S)
+        save_action.triggered.connect(self._save_current_editor)
+        self.addAction(save_action)
+
+    def _save_current_editor(self):
+        current = self.tabs.currentWidget()
+        if isinstance(current, EditorWidget):
+            if current.save():
+                self.show_message("File saved.", 2000)
+            else:
+                self.show_message("Save failed.", 4000)
+        else:
+            self.show_message("No editor to save.", 2000)
+
+    def _close_tab_requested(self, index):
+        widget = self.tabs.widget(index)
+        if isinstance(widget, EditorWidget) and widget.dirty:
+            answer = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                f"The file <b>{QFileInfo(widget.filePath).fileName()}</b> has been modified.\n"
+                "Do you want to save it before closing?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save)
+            if answer == QMessageBox.Save:
+                if not widget.save():
+                    return
+            elif answer == QMessageBox.Cancel:
+                return
+        self.tabs.removeTab(index)
+        widget.deleteLater()
 
     def show_message(self, text: str, timeout: int = 0):
         self.msg_label.setText(text)
@@ -109,19 +146,19 @@ class MainWindow(QMainWindow):
             if self.tabs.tabToolTip(i) == path:
                 self.tabs.setCurrentIndex(i)
                 return
-
-        editor = QTextEdit()
-        editor.setFrameShape(QFrame.NoFrame)
-        editor.setLineWidth(0)
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
-            text = text.replace("\\#", "#")
-            editor.setPlainText(text)
-
+        editor = EditorWidget(path)
         self.highlighter = MarkdownHighlighter(editor.document())
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count()-1, path)
         self.tabs.setCurrentWidget(editor)
+        editor.modifiedChanged.connect(
+            lambda dirty, idx=self.tabs.count(): self._update_tab_title(idx, dirty)
+        )
+
+    def _update_tab_title(self, index: int, dirty: bool):
+        base_name = os.path.basename(self.tabs.tabToolTip(index))
+        title = f"{base_name}{' *' if dirty else ''}"
+        self.tabs.setTabText(index, title)
 
     def toggle_dock(self, dock):
         if dock.isVisible():
