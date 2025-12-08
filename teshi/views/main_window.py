@@ -1,8 +1,8 @@
 import os
 
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
-    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget
-from PySide6.QtCore import Qt, QSize
+    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar
+from PySide6.QtCore import Qt, QSize, QTimer
 from PySide6.QtGui import QAction, QIcon
 
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
@@ -80,6 +80,29 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
 
+        # status bar
+        status_bar = QStatusBar()
+        self.setStatusBar(status_bar)
+
+        self.msg_label = QLabel()
+        self.msg_label.setObjectName("msgLabel")
+        self.msg_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        status_bar.addWidget(self.msg_label, 1)
+
+        self.progress = QProgressBar()
+        self.progress.setMaximumWidth(150)
+        self.progress.setMaximumHeight(12)
+        self.progress.setVisible(False)
+        self.progress.setObjectName("statusProgress")
+        status_bar.addPermanentWidget(self.progress)
+        self.show_message("Ready")
+
+
+    def show_message(self, text: str, timeout: int = 0):
+        self.msg_label.setText(text)
+        if timeout > 0:
+            QTimer.singleShot(timeout, lambda: self.msg_label.setText(""))
+
     def open_file_in_tab(self, path):
         # check if already open
         for i in range(self.tabs.count()):
@@ -88,6 +111,8 @@ class MainWindow(QMainWindow):
                 return
 
         editor = QTextEdit()
+        editor.setFrameShape(QFrame.NoFrame)
+        editor.setLineWidth(0)
         with open(path, "r", encoding="utf-8") as f:
             text = f.read()
             text = text.replace("\\#", "#")
