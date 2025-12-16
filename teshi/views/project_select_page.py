@@ -123,7 +123,8 @@ class ProjectSelectPage(QWidget):
                 }
             """)
             label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-            label.setFixedHeight(50)  # Allow flexible height for each project
+            # Allow flexible height for each project
+            label.setFixedHeight(50)
             label.mousePressEvent = lambda event, path=project['path']: self.open_project(path)
             project_list_container_layout.addWidget(label, 0)
 
@@ -166,8 +167,10 @@ class ProjectSelectPage(QWidget):
         layout.addRow(button_box)
 
         dialog.setLayout(layout)
+
         if dialog.exec_() == QDialog.Accepted:
             project_manager = ProjectManager()
+            # Add project to project manager
             project_manager.add_project(name_edit.text(), path_edit.text())
             os.makedirs(path_edit.text(), exist_ok=True)
             self.close()
@@ -199,13 +202,20 @@ class ProjectSelectPage(QWidget):
         Args:
             path (str): The path of the project to open.
         """
-        print(f"Opening project at: {path}")
         from teshi.views.main_window import MainWindow
         from PySide6.QtCore import Qt
         project_name = os.path.basename(path)
-        self.main_window = MainWindow(project_name, path)  # Save as member variable
-        self.main_window.setAttribute(Qt.WA_DeleteOnClose, False)  # Prevent deletion on close
+        # Save as member variable
+        self.main_window = MainWindow(project_name, path)
+        # Prevent deletion on close
+        self.main_window.setAttribute(Qt.WA_DeleteOnClose, False)
         self.main_window.show()
+
+        # Update current project in project manager
+        project_manager = ProjectManager()
+        project_manager.update_projects(path)
+
+
         # Ensure the new window is fully displayed before closing the current window
         from PySide6.QtCore import QTimer
         QTimer.singleShot(100, lambda: self.close() if self.isVisible() else None)
