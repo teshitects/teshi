@@ -5,13 +5,14 @@ from PySide6.QtWidgets import (
     QApplication, QTreeView, QMenu, QInputDialog, QMessageBox
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QModelIndex
 import platform
 import subprocess
 
 
 class ProjectExplorer(QTreeView):
     file_open_requested = Signal(str)
+    state_changed = Signal()
     def __init__(self, target_dir):
         super().__init__()
         self.setWindowTitle("Project Explorer")
@@ -36,6 +37,10 @@ class ProjectExplorer(QTreeView):
         # Enable right-click menu
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self.open_menu)
+        
+        # Connect expanded/collapsed signals
+        self.expanded.connect(self._on_expanded_collapsed)
+        self.collapsed.connect(self._on_expanded_collapsed)
 
     def on_double_click(self, index):
         item = self.model.itemFromIndex(index)
@@ -144,6 +149,54 @@ class ProjectExplorer(QTreeView):
 
     def get_item_path(self, item):
         return item.data(Qt.UserRole)
+    
+    def _on_expanded_collapsed(self, index):
+        """Handle expanded/collapsed events"""
+        self.state_changed.emit()
+    
+    def get_expanded_state(self) -> list:
+        """Get list of expanded folder paths"""
+        expanded_paths = []
+        self._collect_expanded_paths(self.model.index(0, 0), expanded_paths)
+        return expanded_paths
+    
+    def _collect_expanded_paths(self, index: QModelIndex, expanded_paths: list):
+        """Recursively collect expanded folder paths"""
+        if not index.isValid():
+            return
+        
+        if self.isExpanded(index):
+            item = self.model.itemFromIndex(index)
+            path = item.data(Qt.UserRole)
+            if path and os.path.isdir(path):
+                expanded_paths.append(path)
+        
+        # Recursively check children
+        for row in range(self.model.rowCount(index)):
+            child_index = self.model.index(row, 0, index)
+            self._collect_expanded_paths(child_index, expanded_paths)
+    
+    def set_expanded_state(self, expanded_paths: list):
+        """Expand folders based on saved paths"""
+        if not expanded_paths:
+            return
+        expanded_set = set(expanded_paths)
+        self._restore_expanded_state(self.model.index(0, 0), expanded_set)
+    
+    def _restore_expanded_state(self, index: QModelIndex, expanded_set: set):
+        """Recursively restore expanded state"""
+        if not index.isValid():
+            return
+        
+        item = self.model.itemFromIndex(index)
+        path = item.data(Qt.UserRole)
+        if path and path in expanded_set and os.path.isdir(path):
+            self.expand(index)
+        
+        # Recursively check children
+        for row in range(self.model.rowCount(index)):
+            child_index = self.model.index(row, 0, index)
+            self._restore_expanded_state(child_index, expanded_set)
 
 
 def populate_tree(parent_item, path):

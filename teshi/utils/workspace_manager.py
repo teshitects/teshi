@@ -60,6 +60,12 @@ class WorkspaceManager(QObject):
         # Save dock widget states
         if hasattr(main_window, 'project_dock'):
             workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
+            
+            # Save project explorer expanded state
+            if hasattr(main_window, 'explorer'):
+                workspace_data['project_explorer'] = {
+                    'expanded_folders': main_window.explorer.get_expanded_state()
+                }
         
         return workspace_data
     
@@ -115,6 +121,14 @@ class WorkspaceManager(QObject):
                 main_window.project_dock.show()
             else:
                 main_window.project_dock.hide()
+        
+        # Restore project explorer state
+        project_explorer = workspace_data.get('project_explorer', {})
+        if project_explorer and hasattr(main_window, 'explorer'):
+            expanded_folders = project_explorer.get('expanded_folders', [])
+            # Use QTimer to delay restoration until the tree is fully populated
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, lambda: main_window.explorer.set_expanded_state(expanded_folders))
         
         # Restore open tabs
         open_tabs = workspace_data.get('open_tabs', [])

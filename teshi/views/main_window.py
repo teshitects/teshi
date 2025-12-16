@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
         self.tabs.tabCloseRequested.connect(self._close_tab_requested)
         self.tabs.currentChanged.connect(lambda: self.workspace_manager.trigger_save())
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
+        self.explorer.state_changed.connect(self.workspace_manager.trigger_save)
 
         # status bar
         status_bar = QStatusBar()
