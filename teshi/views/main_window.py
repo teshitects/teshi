@@ -3,11 +3,12 @@ import os
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
     QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar, QMessageBox
 from PySide6.QtCore import Qt, QSize, QTimer, QFileInfo
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtGui import QAction, QIcon, QCloseEvent
 
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.widgets.editor_widget import EditorWidget
+from teshi.utils.workspace_manager import WorkspaceManager
 
 
 class MainWindow(QMainWindow):
@@ -18,9 +19,17 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{project_name} - Teshi - {project_path}")
         self.setWindowIcon(QIcon("assets/teshi_icon64.png"))
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Initialize workspace manager
+        self.workspace_manager = WorkspaceManager(project_path, self)
+        self.workspace_manager.set_main_window(self)
+        
         self._setup_menubar()
         self._setup_layout()
         self._setup_shortcuts()
+        
+        # Restore workspace state
+        self.workspace_manager.restore_workspace(self)
 
 
 
@@ -82,6 +91,7 @@ class MainWindow(QMainWindow):
         self.tabs.setTabsClosable(True)
         self.setCentralWidget(self.tabs)
         self.tabs.tabCloseRequested.connect(self._close_tab_requested)
+        self.tabs.currentChanged.connect(lambda: self.workspace_manager.trigger_save())
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
 
         # status bar
@@ -112,6 +122,8 @@ class MainWindow(QMainWindow):
         if isinstance(current, EditorWidget):
             if current.save():
                 self.show_message("File saved.", 2000)
+                # Trigger workspace save
+                self.workspace_manager.trigger_save()
             else:
                 self.show_message("Save failed.", 4000)
         else:
@@ -134,6 +146,9 @@ class MainWindow(QMainWindow):
                 return
         self.tabs.removeTab(index)
         widget.deleteLater()
+        
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
 
     def show_message(self, text: str, timeout: int = 0):
         self.msg_label.setText(text)
@@ -157,6 +172,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
         self.tabs.setCurrentWidget(editor)
+        
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
 
     def _update_tab_title_by_editor(self, editor: EditorWidget, dirty: bool):
         for i in range(self.tabs.count()):
@@ -171,3 +189,13 @@ class MainWindow(QMainWindow):
             dock.hide()
         else:
             dock.show()
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
+    
+    def closeEvent(self, event: QCloseEvent):
+        """Window close event, save workspace state"""
+        # Stop delayed save timer
+        self.workspace_manager.save_timer.stop()
+        # Save workspace immediately
+        self.workspace_manager.save_workspace(self)
+        event.accept()
