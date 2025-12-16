@@ -35,11 +35,7 @@ class WorkspaceManager(QObject):
         """Get current workspace state"""
         workspace_data = {
             'timestamp': time.time(),
-            'window_geometry': {
-                'x': main_window.x(),
-                'y': main_window.y(),
-                'width': main_window.width(),
-                'height': main_window.height(),
+            'window_state': {
                 'maximized': main_window.isMaximized()
             },
             'open_tabs': [],
@@ -102,17 +98,21 @@ class WorkspaceManager(QObject):
         if not workspace_data:
             return
         
-        # Restore window geometry
-        geometry = workspace_data.get('window_geometry', {})
-        if geometry:
-            main_window.setGeometry(
-                geometry.get('x', 100),
-                geometry.get('y', 100),
-                geometry.get('width', 1200),
-                geometry.get('height', 800)
-            )
-            if geometry.get('maximized', False):
+        # Restore window state (only maximized status)
+        window_state = workspace_data.get('window_state', {})
+        if window_state:
+            if window_state.get('maximized', False):
                 main_window.showMaximized()
+            else:
+                # Center window when not maximized
+                screen = main_window.screen()
+                if screen:
+                    screen_geometry = screen.availableGeometry()
+                    window_width = 1200
+                    window_height = 800
+                    x = (screen_geometry.width() - window_width) // 2
+                    y = (screen_geometry.height() - window_height) // 2
+                    main_window.setGeometry(x, y, window_width, window_height)
         
         # Restore dock widget states
         dock_states = workspace_data.get('dock_states', {})
