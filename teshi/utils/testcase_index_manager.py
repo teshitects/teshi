@@ -453,7 +453,8 @@ class TestCaseIndexManager:
                        snippet(testcases_fts, 1, '<mark>', '</mark>', '...', 32) as name_snippet,
                        snippet(testcases_fts, 2, '<mark>', '</mark>', '...', 64) as preconditions_snippet,
                        snippet(testcases_fts, 3, '<mark>', '</mark>', '...', 64) as steps_snippet,
-                       snippet(testcases_fts, 4, '<mark>', '</mark>', '...', 64) as expected_results_snippet
+                       snippet(testcases_fts, 4, '<mark>', '</mark>', '...', 64) as expected_results_snippet,
+                       snippet(testcases_fts, 5, '<mark>', '</mark>', '...', 64) as notes_snippet
                 FROM testcases_fts 
                 WHERE testcases_fts MATCH ?
                 ORDER BY rank
@@ -474,7 +475,8 @@ class TestCaseIndexManager:
                            name as name_snippet,
                            preconditions as preconditions_snippet,
                            steps as steps_snippet,
-                           expected_results as expected_results_snippet
+                           expected_results as expected_results_snippet,
+                           notes as notes_snippet
                     FROM testcases_fts 
                     WHERE {like_query}
                     ORDER BY name
@@ -508,12 +510,14 @@ class TestCaseIndexManager:
                     preconditions_snippet = row[8]
                     steps_snippet = row[9]
                     expected_results_snippet = row[10]
+                    notes_snippet = row[11]
                 else:
                     # Manual highlighting for LIKE results
                     name_snippet = self._create_manual_snippet(row[1], query)
                     preconditions_snippet = self._create_manual_snippet(row[2], query)
                     steps_snippet = self._create_manual_snippet(row[3], query)
                     expected_results_snippet = self._create_manual_snippet(row[4], query)
+                    notes_snippet = self._create_manual_snippet(row[5], query)
                 
                 results.append({
                     'uuid': row[0],
@@ -526,7 +530,8 @@ class TestCaseIndexManager:
                     'name_snippet': name_snippet,
                     'preconditions_snippet': preconditions_snippet,
                     'steps_snippet': steps_snippet,
-                    'expected_results_snippet': expected_results_snippet
+                    'expected_results_snippet': expected_results_snippet,
+                    'notes_snippet': notes_snippet
                 })
         
         except Exception as e:
@@ -614,7 +619,8 @@ class TestCaseIndexManager:
                     'name_snippet': self._create_manual_snippet(row[1], query),
                     'preconditions_snippet': self._create_manual_snippet(row[2], query),
                     'steps_snippet': self._create_manual_snippet(row[3], query),
-                    'expected_results_snippet': self._create_manual_snippet(row[4], query)
+                    'expected_results_snippet': self._create_manual_snippet(row[4], query),
+                    'notes_snippet': self._create_manual_snippet(row[5], query)
                 })
         except Exception as e:
             print(f"Fallback search error: {e}")

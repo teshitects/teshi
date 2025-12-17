@@ -1,10 +1,10 @@
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QListWidget, QListWidgetItem, QLabel, QTextEdit, QWidget,
-    QSplitter, QFrame, QMessageBox
+    QSplitter, QFrame, QMessageBox, QApplication
 )
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QTextDocument, QTextCharFormat, QColor, QPalette
 
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
 
@@ -21,6 +21,7 @@ class TestcaseSearchDialog(QDialog):
         
         self._setup_ui()
         self._load_statistics()
+        self._setup_highlight_format()
     
     def _setup_ui(self):
         """Setup UI"""
@@ -139,6 +140,101 @@ class TestcaseSearchDialog(QDialog):
         
         # Initial state
         self.current_result = None
+        self.highlight_format = None
+        self.current_query = ""
+    
+    def _setup_highlight_format(self):
+        """Setup highlight format for search results"""
+        self.highlight_format = QTextCharFormat()
+        # Determine theme-appropriate highlight color
+        self.highlight_color = self._get_theme_appropriate_highlight_color()
+        self.highlight_format.setBackground(self.highlight_color)
+    
+    def _get_theme_appropriate_highlight_color(self):
+        """Get appropriate highlight color based on current theme"""
+        # Check if dark mode is active by checking the palette
+        palette = QApplication.palette()
+        window_bg = palette.color(QPalette.Window)
+        window_text = palette.color(QPalette.WindowText)
+        
+        # Calculate luminance to determine if theme is dark or light
+        # Using relative luminance formula: 0.299*R + 0.587*G + 0.114*B
+        luminance = (0.299 * window_bg.red() + 0.587 * window_bg.green() + 0.114 * window_bg.blue()) / 255
+        
+        # If luminance is less than 0.5, it's likely a dark theme
+        if luminance < 0.5:
+            # Dark theme: use a much brighter and more saturated highlight color
+            # Use a bright orange-yellow that provides excellent contrast on dark backgrounds
+            return QColor(255, 180, 0)  # Bright amber/orange-yellow
+        else:
+            # Light theme: use a softer yellow that doesn't overpower white text
+            return QColor(255, 255, 150)  # Light yellow
+    
+    def _get_highlight_css_color(self):
+        """Get CSS color string for HTML highlighting"""
+        return self.highlight_color.name()  # QColor.name() already returns hex with #
+    
+    def _html_to_rich_text(self, html_text, use_plain_fallback=True):
+        """Convert HTML with <mark> tags to rich text with highlighting"""
+        if not html_text:
+            return ""
+        
+        # If no mark tags, return plain text
+        if "<mark>" not in html_text:
+            return html_text
+        
+        # Create a text document to handle the conversion
+        doc = QTextDocument()
+        
+        # Get theme-appropriate highlight color
+        highlight_css = self._get_highlight_css_color()
+        
+        # Replace <mark> tags with spans that have a background color
+        # Qt's rich text engine supports basic HTML including CSS
+        styled_html = html_text.replace(
+            "<mark>", 
+            f'<span style="background-color: {highlight_css};">'
+        ).replace(
+            "</mark>", 
+            "</span>"
+        )
+        
+        # Set the HTML to the document
+        doc.setHtml(styled_html)
+        
+        # Return as plain text if there are issues with rich text
+        if use_plain_fallback and doc.isEmpty():
+            # Fallback: remove mark tags and return plain text
+            return html_text.replace("<mark>", "").replace("</mark>", "")
+        
+        return doc.toHtml()
+    
+    def _apply_highlight_to_textedit(self, text_edit, text, snippet_text=None):
+        """Apply highlighting to a QTextEdit widget"""
+        if not text and not snippet_text:
+            text_edit.clear()
+            return
+        
+        # Re-detect theme and update highlight color each time
+        self._setup_highlight_format()
+        
+        # Use snippet if available, otherwise use plain text
+        display_text = snippet_text if snippet_text else text
+        
+        if "<mark>" in display_text:
+            # Convert HTML with highlighting to rich text
+            highlight_css = self._get_highlight_css_color()
+            styled_html = display_text.replace(
+                "<mark>", 
+                f'<span style="background-color: {highlight_css};">'
+            ).replace(
+                "</mark>", 
+                "</span>"
+            )
+            text_edit.setHtml(styled_html)
+        else:
+            # No highlighting needed, use plain text
+            text_edit.setPlainText(display_text if display_text else "")
     
     def _load_statistics(self):
         """Load statistics information"""
@@ -154,6 +250,7 @@ class TestcaseSearchDialog(QDialog):
         if not query:
             return
         
+        self.current_query = query
         try:
             results = self.index_manager.search_testcases(query)
             self._display_results(results, query)
@@ -171,7 +268,9 @@ class TestcaseSearchDialog(QDialog):
         for result in results:
             # Use search highlighted name
             display_name = result.get('name_snippet', result['name'])
-            item = QListWidgetItem(display_name)
+            # For the list item, we'll remove HTML tags for cleaner display
+            clean_name = display_name.replace("<mark>", "").replace("</mark>", "") if "<mark>" in display_name else display_name
+            item = QListWidgetItem(clean_name)
             
             # Store complete result data
             item.setData(Qt.UserRole, result)
@@ -201,10 +300,27 @@ class TestcaseSearchDialog(QDialog):
         self.name_label.setText(result['name'])
         self.path_label.setText(result['file_path'])
         
-        self.preconditions_edit.setPlainText(result['preconditions'] or "")
-        self.steps_edit.setPlainText(result['steps'] or "")
-        self.expected_results_edit.setPlainText(result['expected_results'] or "")
-        self.notes_edit.setPlainText(result['notes'] or "")
+        # Apply highlighting to relevant fields
+        self._apply_highlight_to_textedit(
+            self.preconditions_edit, 
+            result['preconditions'], 
+            result.get('preconditions_snippet')
+        )
+        self._apply_highlight_to_textedit(
+            self.steps_edit, 
+            result['steps'], 
+            result.get('steps_snippet')
+        )
+        self._apply_highlight_to_textedit(
+            self.expected_results_edit, 
+            result['expected_results'], 
+            result.get('expected_results_snippet')
+        )
+        self._apply_highlight_to_textedit(
+            self.notes_edit, 
+            result['notes'], 
+            result.get('notes_snippet')  # Now notes_snippet is provided by index manager
+        )
     
     def _clear_details(self):
         """Clear detailed information"""
@@ -221,6 +337,7 @@ class TestcaseSearchDialog(QDialog):
         """Clear search"""
         self.search_edit.clear()
         self.results_list.clear()
+        self.current_query = ""
         self._clear_details()
     
     def _open_file(self):
