@@ -130,8 +130,8 @@ class TestCaseIndexManager:
             title = section['title']
             content = section['content']
             
-            # Detect test case start: ## Test Case Name
-            if title == 'Test Case Name':
+            # Detect test case start: Support both English and Chinese
+            if title in ['Test Case Name', '测试用例名称']:
                 # Save previous test case
                 if current_testcase:
                     testcases.append(current_testcase)
@@ -156,16 +156,16 @@ class TestCaseIndexManager:
                 )
             
             elif current_testcase:
-                # Handle other fields
-                if title == 'Number':
+                # Handle other fields - support both English and Chinese
+                if title in ['Number', '编号']:
                     current_testcase.number = content.strip()
-                elif title == 'Preconditions':
+                elif title in ['Preconditions', '前置条件']:
                     current_testcase.preconditions = content.strip()
-                elif title == 'Operation Steps':
+                elif title in ['Operation Steps', '操作步骤', '测试步骤']:
                     current_testcase.steps = content.strip()
-                elif title == 'Expected Results':
+                elif title in ['Expected Results', '预期结果', '期望结果']:
                     current_testcase.expected_results = content.strip()
-                elif title == 'Notes':
+                elif title in ['Notes', '备注', '说明']:
                     current_testcase.notes = content.strip()
         
         # Add the last test case
