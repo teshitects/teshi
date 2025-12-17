@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QLabel, QTextEdit, QWidget,
     QSplitter, QFrame, QMessageBox, QApplication
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QByteArray, QSettings
 from PySide6.QtGui import QFont, QTextDocument, QTextCharFormat, QColor, QPalette
 
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
@@ -22,6 +22,12 @@ class TestcaseSearchDialog(QDialog):
         self._setup_ui()
         self._load_statistics()
         self._setup_highlight_format()
+        
+        # Restore geometry from settings
+        self._restore_geometry()
+        
+        # Connect close event to save geometry
+        self.finished.connect(self._save_geometry_on_close)
     
     def _setup_ui(self):
         """Setup UI"""
@@ -364,3 +370,22 @@ class TestcaseSearchDialog(QDialog):
             self.search_edit.selectAll()
         else:
             super().keyPressEvent(event)
+    
+
+    def _restore_geometry(self):
+        """Restore dialog geometry from QSettings"""
+        try:
+            settings = QSettings("Teshi", "TestcaseSearchDialog")
+            geometry = settings.value("geometry", QByteArray())
+            if geometry:
+                self.restoreGeometry(geometry)
+        except Exception as e:
+            print(f"Failed to restore search dialog geometry: {e}")
+    
+    def _save_geometry_on_close(self, result):
+        """Save dialog geometry when closed"""
+        try:
+            settings = QSettings("Teshi", "TestcaseSearchDialog")
+            settings.setValue("geometry", self.saveGeometry())
+        except Exception as e:
+            print(f"Failed to save search dialog geometry: {e}")
