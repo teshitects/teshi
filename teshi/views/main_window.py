@@ -93,8 +93,12 @@ class MainWindow(QMainWindow):
     def _show_testcase_search_dialog(self):
         """Show test case search dialog"""
         try:
-            dialog = TestcaseSearchDialog(self.index_manager, self)
-            dialog.exec()
+            # Create dialog only if it doesn't exist or was closed
+            if not hasattr(self, 'search_dialog') or not self.search_dialog.isVisible():
+                self.search_dialog = TestcaseSearchDialog(self.index_manager, self)
+            self.search_dialog.show()
+            self.search_dialog.raise_()
+            self.search_dialog.activateWindow()
         except Exception as e:
             self.show_message(f"Error opening search dialog: {e}", 5000)
 

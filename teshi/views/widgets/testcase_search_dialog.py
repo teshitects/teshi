@@ -16,7 +16,7 @@ class TestcaseSearchDialog(QDialog):
         super().__init__(parent)
         self.index_manager = index_manager
         self.setWindowTitle("Search Test Cases")
-        self.setModal(True)
+        self.setModal(False)
         self.resize(800, 600)
         
         self._setup_ui()
@@ -130,7 +130,7 @@ class TestcaseSearchDialog(QDialog):
         button_layout.addStretch()
         
         self.close_btn = QPushButton("Close")
-        self.close_btn.clicked.connect(self.accept)
+        self.close_btn.clicked.connect(self.hide)  # Hide instead of accept for non-modal dialog
         button_layout.addWidget(self.close_btn)
         
         layout.addLayout(button_layout)
@@ -234,14 +234,14 @@ class TestcaseSearchDialog(QDialog):
         parent = self.parent()
         if hasattr(parent, 'open_file_in_tab'):
             parent.open_file_in_tab(file_path)
-            self.accept()
+            # Don't close the dialog for non-modal mode
         else:
             QMessageBox.information(self, "Open File", f"File path: {file_path}")
     
     def keyPressEvent(self, event):
         """Handle keyboard events"""
         if event.key() == Qt.Key_Escape:
-            self.accept()
+            self.hide()  # Hide instead of accept for non-modal dialog
         elif event.key() == Qt.Key_F and event.modifiers() & Qt.ControlModifier:
             self.search_edit.setFocus()
             self.search_edit.selectAll()
