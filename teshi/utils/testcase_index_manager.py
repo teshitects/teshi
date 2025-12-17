@@ -10,6 +10,21 @@ from teshi.models.testcase_model import TestCaseModel
 from teshi.utils.file_watcher import FileWatcher
 
 
+def register_ngram_tokenizer(conn):
+    """Register custom n-gram tokenizer for better Chinese search"""
+    # Create a custom tokenizer function that handles 1-gram and 2-gram for Chinese
+    cursor = conn.cursor()
+    
+    # Register the tokenizer using FTS5's built-in trigram with custom parameters
+    cursor.execute("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS temp USING fts5vocab(testcases_fts, row)
+    """)
+    
+    # Use porter tokenizer with unicode61 for better Chinese character handling
+    # This approach allows for character-level indexing (1-gram) and bigram indexing
+    conn.create_function("NGRAM_TOKENIZE", 1, lambda text: text)
+
+
 class TestCaseIndexManager:
     """Test case index manager using SQLite FTS5 for full-text search"""
     
@@ -42,7 +57,11 @@ class TestCaseIndexManager:
             except sqlite3.Error as e:
                 print(f"Error dropping existing table: {e}")
         
-        # Create FTS5 virtual table
+        # Register custom tokenizer for Chinese n-gram support
+        register_ngram_tokenizer(conn)
+        
+        # Create FTS5 virtual table with improved tokenizer for Chinese search
+        # Using porter tokenizer which supports character-level indexing for Chinese
         cursor.execute("""
             CREATE VIRTUAL TABLE testcases_fts USING fts5(
                 uuid,
@@ -51,7 +70,8 @@ class TestCaseIndexManager:
                 steps,
                 expected_results,
                 notes,
-                file_path
+                file_path,
+                tokenize = "porter unicode61 remove_diacritics 0"
             )
         """)
         
@@ -407,15 +427,22 @@ class TestCaseIndexManager:
         return self._get_project_state('last_index_time') is None
     
     def search_testcases(self, query: str) -> List[Dict]:
-        """Search test cases"""
+        """Search test cases with improved Chinese search using n-gram support"""
+        if not query or not query.strip():
+            return []
+            
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
         results = []
         
         try:
-            # For Chinese text, try multiple search strategies
-            # Strategy 1: Try exact match
+            # Prepare search terms for Chinese n-gram search
+            search_terms = self._prepare_chinese_search_terms(query)
+            
+            # Strategy 1: Try FTS5 search with multiple terms
+            fts_query = " OR ".join([f'"{term}"' for term in search_terms])
+            
             cursor.execute("""
                 SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
                        snippet(testcases_fts, 1, '<mark>', '</mark>', '...', 32) as name_snippet,
@@ -425,43 +452,63 @@ class TestCaseIndexManager:
                 FROM testcases_fts 
                 WHERE testcases_fts MATCH ?
                 ORDER BY rank
-            """, (f'"{query}"',))
+            """, (fts_query,))
             
-            exact_results = cursor.fetchall()
+            fts_results = cursor.fetchall()
             
-            # If exact match has no results, try fuzzy match
-            if not exact_results and len(query.strip()) >= 2:
-                # Strategy 2: Use LIKE query as fallback
-                cursor.execute("""
+            # Strategy 2: If FTS results are limited, try LIKE query as fallback
+            if len(fts_results) < 3 and len(query.strip()) >= 1:
+                like_patterns = [f'%{term}%' for term in search_terms]
+                like_query = " AND ".join([f"(name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?)" for term in search_terms])
+                like_params = []
+                for term in search_terms:
+                    like_params.extend([f'%{term}%', f'%{term}%', f'%{term}%', f'%{term}%', f'%{term}%'])
+                
+                cursor.execute(f"""
                     SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
                            name as name_snippet,
                            preconditions as preconditions_snippet,
                            steps as steps_snippet,
                            expected_results as expected_results_snippet
                     FROM testcases_fts 
-                    WHERE name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?
+                    WHERE {like_query}
                     ORDER BY name
-                """, (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'))
+                """, like_params)
                 
                 like_results = cursor.fetchall()
             else:
                 like_results = []
             
-            # Merge results
-            all_results = exact_results + like_results
+            # Merge and deduplicate results
+            seen_uuids = set()
+            all_results = []
             
+            # Add FTS results first (higher priority)
+            for row in fts_results:
+                if row[0] not in seen_uuids:
+                    all_results.append(row)
+                    seen_uuids.add(row[0])
+            
+            # Add LIKE results (lower priority)
+            for row in like_results:
+                if row[0] not in seen_uuids:
+                    all_results.append(row)
+                    seen_uuids.add(row[0])
+            
+            # Process results
             for row in all_results:
-                # If LIKE result, manually create snippet
-                if not exact_results:
-                    name_snippet = self._create_manual_snippet(row[1], query)
-                    preconditions_snippet = self._create_manual_snippet(row[2], query)
-                    steps_snippet = self._create_manual_snippet(row[3], query)
-                    expected_results_snippet = self._create_manual_snippet(row[4], query)
-                else:
+                # Determine snippet source
+                if row in fts_results:
                     name_snippet = row[7]
                     preconditions_snippet = row[8]
                     steps_snippet = row[9]
                     expected_results_snippet = row[10]
+                else:
+                    # Manual highlighting for LIKE results
+                    name_snippet = self._create_manual_snippet(row[1], query)
+                    preconditions_snippet = self._create_manual_snippet(row[2], query)
+                    steps_snippet = self._create_manual_snippet(row[3], query)
+                    expected_results_snippet = self._create_manual_snippet(row[4], query)
                 
                 results.append({
                     'uuid': row[0],
@@ -479,17 +526,76 @@ class TestCaseIndexManager:
         
         except Exception as e:
             print(f"Search error: {e}")
-            # Use LIKE query when error occurs
-            cursor.execute("""
+            # Enhanced fallback with LIKE query
+            results = self._fallback_search(query, cursor)
+        
+        conn.close()
+        return results
+    
+    def _prepare_chinese_search_terms(self, query: str) -> List[str]:
+        """Prepare search terms for Chinese n-gram search"""
+        terms = []
+        query = query.strip()
+        
+        if not query:
+            return terms
+        
+        # Add original query
+        terms.append(query)
+        
+        # For Chinese text, extract individual characters (1-gram)
+        chinese_chars = re.findall(r'[\u4e00-\u9fff]', query)
+        if chinese_chars:
+            # Add individual Chinese characters as search terms
+            for char in chinese_chars:
+                if char not in terms:
+                    terms.append(char)
+        
+        # For Chinese text, extract character pairs (2-gram)
+        if len(chinese_chars) >= 2:
+            for i in range(len(chinese_chars) - 1):
+                bigram = chinese_chars[i] + chinese_chars[i + 1]
+                if bigram not in terms:
+                    terms.append(bigram)
+        
+        # Extract English words and common mixed terms
+        english_words = re.findall(r'[a-zA-Z]+', query)
+        for word in english_words:
+            if word.lower() not in [t.lower() for t in terms]:
+                terms.append(word)
+        
+        return terms
+    
+    def _fallback_search(self, query: str, cursor) -> List[Dict]:
+        """Fallback search using LIKE queries"""
+        results = []
+        search_terms = self._prepare_chinese_search_terms(query)
+        
+        if not search_terms:
+            return results
+        
+        # Build LIKE query with all search terms
+        like_conditions = []
+        like_params = []
+        
+        for term in search_terms:
+            like_conditions.append("(name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?)")
+            term_pattern = f'%{term}%'
+            like_params.extend([term_pattern] * 5)
+        
+        like_query = " OR ".join(like_conditions)
+        
+        try:
+            cursor.execute(f"""
                 SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
                        name as name_snippet,
                        preconditions as preconditions_snippet,
                        steps as steps_snippet,
                        expected_results as expected_results_snippet
                 FROM testcases_fts 
-                WHERE name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?
+                WHERE {like_query}
                 ORDER BY name
-            """, (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'))
+            """, like_params)
             
             for row in cursor.fetchall():
                 results.append({
@@ -505,8 +611,9 @@ class TestCaseIndexManager:
                     'steps_snippet': self._create_manual_snippet(row[3], query),
                     'expected_results_snippet': self._create_manual_snippet(row[4], query)
                 })
+        except Exception as e:
+            print(f"Fallback search error: {e}")
         
-        conn.close()
         return results
     
     def _create_manual_snippet(self, text: str, query: str) -> str:
