@@ -49,31 +49,29 @@ class TestCaseIndexManager:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Check and delete potentially problematic FTS5 table
+        # Check if FTS5 table exists, only create if it doesn't exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='testcases_fts'")
-        if cursor.fetchone():
-            try:
-                cursor.execute("DROP TABLE IF EXISTS testcases_fts")
-            except sqlite3.Error as e:
-                print(f"Error dropping existing table: {e}")
-        
-        # Register custom tokenizer for Chinese n-gram support
-        register_ngram_tokenizer(conn)
-        
-        # Create FTS5 virtual table with improved tokenizer for Chinese search
-        # Using porter tokenizer which supports character-level indexing for Chinese
-        cursor.execute("""
-            CREATE VIRTUAL TABLE testcases_fts USING fts5(
-                uuid,
-                name,
-                preconditions,
-                steps,
-                expected_results,
-                notes,
-                file_path,
-                tokenize = "porter unicode61 remove_diacritics 0"
-            )
-        """)
+        if not cursor.fetchone():
+            # Register custom tokenizer for Chinese n-gram support
+            register_ngram_tokenizer(conn)
+            
+            # Create FTS5 virtual table with improved tokenizer for Chinese search
+            # Using porter tokenizer which supports character-level indexing for Chinese
+            cursor.execute("""
+                CREATE VIRTUAL TABLE testcases_fts USING fts5(
+                    uuid,
+                    name,
+                    preconditions,
+                    steps,
+                    expected_results,
+                    notes,
+                    file_path,
+                    tokenize = "porter unicode61 remove_diacritics 0"
+                )
+            """)
+            print("Created new FTS5 table")
+        else:
+            print("FTS5 table already exists, preserving data")
         
         # Create regular table to store metadata
         cursor.execute("""
@@ -351,17 +349,24 @@ class TestCaseIndexManager:
                 
                 # Parse test cases
                 testcases = self._parse_markdown_testcase(file_path)
+                print(f"Parsed {len(testcases)} test cases from {file_path}")
                 
+                # Always remove old index first (if exists)
+                self._remove_testcases_by_file(file_path)
+                
+                # Add new index if testcases found
                 if testcases:
-                    # Remove old index
-                    self._remove_testcases_by_file(file_path)
-                    
-                    # Add new index
                     self._add_testcases(testcases, file_path)
                     
-                    # Update metadata
-                    sample_uuid = testcases[0].uuid if testcases else self._generate_uuid("dummy", file_path)
-                    self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
+                    # Update metadata using first testcase's UUID
+                    sample_uuid = testcases[0].uuid
+                else:
+                    # Use dummy UUID if no testcases found
+                    sample_uuid = self._generate_uuid("dummy", file_path)
+                    print(f"No test cases found in {file_path}")
+                
+                # Always update metadata
+                self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
                 
             except sqlite3.Error as e:
                 print(f"SQLite error processing file {file_path}: {e}")
