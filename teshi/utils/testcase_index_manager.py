@@ -1,0 +1,667 @@
+import os
+import re
+import sqlite3
+import hashlib
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from pathlib import Path
+
+from teshi.models.testcase_model import TestCaseModel
+from teshi.utils.file_watcher import FileWatcher
+
+
+class TestCaseIndexManager:
+    """Test case index manager using SQLite FTS5 for full-text search"""
+    
+    def __init__(self, project_path: str):
+        self.project_path = project_path
+        self.cache_dir = os.path.join(project_path, '.teshi', 'cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
+        
+        self.db_path = os.path.join(self.cache_dir, 'testcases_fts.db')
+        self.metadata_db_path = os.path.join(self.cache_dir, 'metadata.db')
+        
+        self._init_databases()
+        
+        # Initialize file watcher
+        self.file_watcher = None
+        self._update_pending = False
+        self._update_timer = None
+    
+    def _init_databases(self):
+        """Initialize databases"""
+        # Initialize FTS5 database
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Check and delete potentially problematic FTS5 table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='testcases_fts'")
+        if cursor.fetchone():
+            try:
+                cursor.execute("DROP TABLE IF EXISTS testcases_fts")
+            except sqlite3.Error as e:
+                print(f"Error dropping existing table: {e}")
+        
+        # Create FTS5 virtual table
+        cursor.execute("""
+            CREATE VIRTUAL TABLE testcases_fts USING fts5(
+                uuid,
+                name,
+                preconditions,
+                steps,
+                expected_results,
+                notes,
+                file_path
+            )
+        """)
+        
+        # Create regular table to store metadata
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS testcases_meta (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                uuid TEXT UNIQUE NOT NULL,
+                file_path TEXT NOT NULL,
+                file_mtime REAL NOT NULL,
+                file_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+        
+        # Initialize metadata database
+        conn = sqlite3.connect(self.metadata_db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS project_state (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+    
+    def _get_file_hash(self, file_path: str) -> str:
+        """Calculate MD5 hash of the file"""
+        hash_md5 = hashlib.md5()
+        try:
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_md5.update(chunk)
+            return hash_md5.hexdigest()
+        except:
+            return ""
+    
+    def _parse_markdown_testcase(self, file_path: str) -> List[TestCaseModel]:
+        """Parse Markdown test case file"""
+        testcases = []
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+        except:
+            return testcases
+        
+        # Split content by headers
+        sections = re.split(r'^(#{1,3})\s+(.+)$', content, flags=re.MULTILINE)
+        
+        current_testcase = None
+        
+        # Reorganize content: pair headers with corresponding content
+        parsed_sections = []
+        for i in range(1, len(sections), 3):
+            if i + 2 < len(sections):
+                level = len(sections[i])
+                title = sections[i + 1].strip()
+                content_part = sections[i + 2].strip() if i + 2 < len(sections) else ""
+                
+                parsed_sections.append({
+                    'level': level,
+                    'title': title,
+                    'content': content_part
+                })
+        
+        # Parse test cases
+        for section in parsed_sections:
+            title = section['title']
+            content = section['content']
+            
+            # Detect test case start: ## Test Case Name
+            if title == 'Test Case Name':
+                # Save previous test case
+                if current_testcase:
+                    testcases.append(current_testcase)
+                
+                # Create new test case
+                testcase_name = content.strip()
+                current_testcase = TestCaseModel(
+                    uuid=self._generate_uuid(testcase_name, file_path),
+                    name=testcase_name,
+                    number="",
+                    preconditions="",
+                    steps="",
+                    expected_results="",
+                    notes="",
+                    priority="",
+                    domain="",
+                    stage="",
+                    feature="",
+                    automate=False,
+                    tags=[],
+                    extras={}
+                )
+            
+            elif current_testcase:
+                # Handle other fields
+                if title == 'Number':
+                    current_testcase.number = content.strip()
+                elif title == 'Preconditions':
+                    current_testcase.preconditions = content.strip()
+                elif title == 'Operation Steps':
+                    current_testcase.steps = content.strip()
+                elif title == 'Expected Results':
+                    current_testcase.expected_results = content.strip()
+                elif title == 'Notes':
+                    current_testcase.notes = content.strip()
+        
+        # Add the last test case
+        if current_testcase:
+            testcases.append(current_testcase)
+        
+        return testcases
+    
+    def _generate_uuid(self, name: str, file_path: str) -> str:
+        """Generate unique UUID"""
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{file_path}:{name}"))
+    
+    def _assign_section_content(self, testcase: TestCaseModel, section: str, content: str):
+        """Assign content to corresponding field of test case"""
+        if "前置条件" in section or "前提条件" in section:
+            testcase.preconditions = content
+        elif "操作步骤" in section or "测试步骤" in section or "步骤" in section:
+            testcase.steps = content
+        elif "预期结果" in section or "期望结果" in section:
+            testcase.expected_results = content
+        elif "备注" in section or "说明" in section:
+            testcase.notes = content
+    
+    def _append_section_content(self, testcase: TestCaseModel, section: str, content: str):
+        """Append content to corresponding field of test case"""
+        if not content:
+            return
+            
+        if "前置条件" in section or "前提条件" in section:
+            testcase.preconditions += "\n" + content
+        elif "操作步骤" in section or "测试步骤" in section or "步骤" in section:
+            testcase.steps += "\n" + content
+        elif "预期结果" in section or "期望结果" in section:
+            testcase.expected_results += "\n" + content
+        elif "备注" in section or "说明" in section:
+            testcase.notes += "\n" + content
+    
+    def _find_markdown_files(self) -> List[str]:
+        """Find all Markdown files in the project"""
+        md_files = []
+        for root, dirs, files in os.walk(self.project_path):
+            # Skip .git directory and other hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            
+            for file in files:
+                if file.endswith('.md'):
+                    md_files.append(os.path.join(root, file))
+        
+        return md_files
+    
+    def _get_file_meta(self, file_path: str) -> Optional[Dict]:
+        """Get file metadata"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT uuid, file_mtime, file_hash FROM testcases_meta 
+            WHERE file_path = ?
+        """, (file_path,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'uuid': row[0],
+                'file_mtime': row[1],
+                'file_hash': row[2]
+            }
+        return None
+    
+    def _update_file_meta(self, file_path: str, uuid: str, mtime: float, file_hash: str):
+        """Update file metadata"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO testcases_meta (uuid, file_path, file_mtime, file_hash, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 
+                COALESCE((SELECT created_at FROM testcases_meta WHERE file_path = ?), ?), ?)
+        """, (uuid, file_path, mtime, file_hash, file_path, now, now))
+        
+        conn.commit()
+        conn.close()
+    
+    def _remove_testcases_by_file(self, file_path: str):
+        """Remove all test cases for specified file"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            DELETE FROM testcases_fts WHERE file_path = ?
+        """, (file_path,))
+        
+        cursor.execute("""
+            DELETE FROM testcases_meta WHERE file_path = ?
+        """, (file_path,))
+        
+        conn.commit()
+        conn.close()
+    
+    def _add_testcases(self, testcases: List[TestCaseModel], file_path: str):
+        """Add test cases to index"""
+        if not testcases:
+            return
+        
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        for testcase in testcases:
+            cursor.execute("""
+                INSERT INTO testcases_fts (uuid, name, preconditions, steps, expected_results, notes, file_path)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                testcase.uuid,
+                testcase.name,
+                testcase.preconditions,
+                testcase.steps,
+                testcase.expected_results,
+                testcase.notes,
+                file_path
+            ))
+        
+        conn.commit()
+        conn.close()
+    
+    def build_index(self, force_rebuild=False):
+        """Build or update test case index"""
+        print(f"Building test case index for project: {self.project_path}")
+        
+        # If force rebuild, delete existing database
+        if force_rebuild and os.path.exists(self.db_path):
+            try:
+                os.remove(self.db_path)
+                print("Removed existing database for rebuild")
+                self._init_databases()  # Re-initialize database
+            except Exception as e:
+                print(f"Error removing existing database: {e}")
+        
+        md_files = self._find_markdown_files()
+        updated_files = 0
+        new_files = 0
+        
+        for file_path in md_files:
+            try:
+                # 获取文件修改时间和哈希
+                file_mtime = os.path.getmtime(file_path)
+                file_hash = self._get_file_hash(file_path)
+                
+                # Check if file already exists and is unchanged
+                existing_meta = self._get_file_meta(file_path)
+                
+                if existing_meta:
+                    if existing_meta['file_mtime'] == file_mtime and existing_meta['file_hash'] == file_hash:
+                        continue  # File unchanged, skip
+                    
+                    updated_files += 1
+                else:
+                    new_files += 1
+                
+                # Parse test cases
+                testcases = self._parse_markdown_testcase(file_path)
+                
+                if testcases:
+                    # Remove old index
+                    self._remove_testcases_by_file(file_path)
+                    
+                    # Add new index
+                    self._add_testcases(testcases, file_path)
+                    
+                    # Update metadata
+                    sample_uuid = testcases[0].uuid if testcases else self._generate_uuid("dummy", file_path)
+                    self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
+                
+            except sqlite3.Error as e:
+                print(f"SQLite error processing file {file_path}: {e}")
+                # If database error, try to rebuild database
+                if "recursively defined fts5" in str(e).lower():
+                    print("Detected FTS5 recursive definition error, attempting rebuild...")
+                    return self.build_index(force_rebuild=True)
+            except Exception as e:
+                print(f"Error processing file {file_path}: {e}")
+        
+        # Clean up index for non-existent files
+        self._cleanup_orphaned_files(md_files)
+        
+        # Update project state
+        self._set_project_state('last_index_time', datetime.now().isoformat())
+        
+        print(f"Index built: {new_files} new files, {updated_files} updated files")
+        return new_files + updated_files
+    
+    def _cleanup_orphaned_files(self, existing_files: List[str]):
+        """Clean up index for non-existent files"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        # Get all indexed files
+        cursor.execute("SELECT DISTINCT file_path FROM testcases_meta")
+        indexed_files = [row[0] for row in cursor.fetchall()]
+        
+        # Remove non-existent files
+        for file_path in indexed_files:
+            if file_path not in existing_files:
+                self._remove_testcases_by_file(file_path)
+                print(f"Removed index for deleted file: {file_path}")
+        
+        conn.close()
+    
+    def _set_project_state(self, key: str, value: str):
+        """Set project state"""
+        conn = sqlite3.connect(self.metadata_db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            INSERT OR REPLACE INTO project_state (key, value) VALUES (?, ?)
+        """, (key, value))
+        
+        conn.commit()
+        conn.close()
+    
+    def _get_project_state(self, key: str) -> Optional[str]:
+        """Get project state"""
+        conn = sqlite3.connect(self.metadata_db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT value FROM project_state WHERE key = ?", (key,))
+        row = cursor.fetchone()
+        
+        conn.close()
+        
+        return row[0] if row else None
+    
+    def is_first_open(self) -> bool:
+        """Check if this is the first time opening the project"""
+        return self._get_project_state('last_index_time') is None
+    
+    def search_testcases(self, query: str) -> List[Dict]:
+        """Search test cases"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        results = []
+        
+        try:
+            # For Chinese text, try multiple search strategies
+            # Strategy 1: Try exact match
+            cursor.execute("""
+                SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
+                       snippet(testcases_fts, 1, '<mark>', '</mark>', '...', 32) as name_snippet,
+                       snippet(testcases_fts, 2, '<mark>', '</mark>', '...', 64) as preconditions_snippet,
+                       snippet(testcases_fts, 3, '<mark>', '</mark>', '...', 64) as steps_snippet,
+                       snippet(testcases_fts, 4, '<mark>', '</mark>', '...', 64) as expected_results_snippet
+                FROM testcases_fts 
+                WHERE testcases_fts MATCH ?
+                ORDER BY rank
+            """, (f'"{query}"',))
+            
+            exact_results = cursor.fetchall()
+            
+            # If exact match has no results, try fuzzy match
+            if not exact_results and len(query.strip()) >= 2:
+                # Strategy 2: Use LIKE query as fallback
+                cursor.execute("""
+                    SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
+                           name as name_snippet,
+                           preconditions as preconditions_snippet,
+                           steps as steps_snippet,
+                           expected_results as expected_results_snippet
+                    FROM testcases_fts 
+                    WHERE name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?
+                    ORDER BY name
+                """, (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'))
+                
+                like_results = cursor.fetchall()
+            else:
+                like_results = []
+            
+            # Merge results
+            all_results = exact_results + like_results
+            
+            for row in all_results:
+                # If LIKE result, manually create snippet
+                if not exact_results:
+                    name_snippet = self._create_manual_snippet(row[1], query)
+                    preconditions_snippet = self._create_manual_snippet(row[2], query)
+                    steps_snippet = self._create_manual_snippet(row[3], query)
+                    expected_results_snippet = self._create_manual_snippet(row[4], query)
+                else:
+                    name_snippet = row[7]
+                    preconditions_snippet = row[8]
+                    steps_snippet = row[9]
+                    expected_results_snippet = row[10]
+                
+                results.append({
+                    'uuid': row[0],
+                    'name': row[1],
+                    'preconditions': row[2],
+                    'steps': row[3],
+                    'expected_results': row[4],
+                    'notes': row[5],
+                    'file_path': row[6],
+                    'name_snippet': name_snippet,
+                    'preconditions_snippet': preconditions_snippet,
+                    'steps_snippet': steps_snippet,
+                    'expected_results_snippet': expected_results_snippet
+                })
+        
+        except Exception as e:
+            print(f"Search error: {e}")
+            # Use LIKE query when error occurs
+            cursor.execute("""
+                SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
+                       name as name_snippet,
+                       preconditions as preconditions_snippet,
+                       steps as steps_snippet,
+                       expected_results as expected_results_snippet
+                FROM testcases_fts 
+                WHERE name LIKE ? OR preconditions LIKE ? OR steps LIKE ? OR expected_results LIKE ? OR notes LIKE ?
+                ORDER BY name
+            """, (f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%', f'%{query}%'))
+            
+            for row in cursor.fetchall():
+                results.append({
+                    'uuid': row[0],
+                    'name': row[1],
+                    'preconditions': row[2],
+                    'steps': row[3],
+                    'expected_results': row[4],
+                    'notes': row[5],
+                    'file_path': row[6],
+                    'name_snippet': self._create_manual_snippet(row[1], query),
+                    'preconditions_snippet': self._create_manual_snippet(row[2], query),
+                    'steps_snippet': self._create_manual_snippet(row[3], query),
+                    'expected_results_snippet': self._create_manual_snippet(row[4], query)
+                })
+        
+        conn.close()
+        return results
+    
+    def _create_manual_snippet(self, text: str, query: str) -> str:
+        """Manually create search highlight snippet"""
+        if not text or not query:
+            return text or ""
+        
+        # Simple highlight implementation
+        highlighted = text.replace(query, f'<mark>{query}</mark>')
+        
+        # Truncate to first 64 characters
+        if len(highlighted) > 64:
+            # Try to truncate near query term
+            query_pos = highlighted.lower().find(query.lower())
+            if query_pos != -1:
+                start = max(0, query_pos - 20)
+                end = min(len(highlighted), query_pos + len(query) + 44)
+                snippet = highlighted[start:end]
+                if start > 0:
+                    snippet = '...' + snippet
+                if end < len(highlighted):
+                    snippet = snippet + '...'
+                return snippet
+            else:
+                return highlighted[:64] + '...'
+        
+        return highlighted
+    
+    def get_all_testcases(self) -> List[Dict]:
+        """Get all test cases"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT uuid, name, preconditions, steps, expected_results, notes, file_path
+            FROM testcases_fts 
+            ORDER BY name
+        """)
+        
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'uuid': row[0],
+                'name': row[1],
+                'preconditions': row[2],
+                'steps': row[3],
+                'expected_results': row[4],
+                'notes': row[5],
+                'file_path': row[6]
+            })
+        
+        conn.close()
+        return results
+    
+    def get_statistics(self) -> Dict:
+        """Get index statistics"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM testcases_fts")
+        total_testcases = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(DISTINCT file_path) FROM testcases_fts")
+        total_files = cursor.fetchone()[0]
+        
+        last_index_time = self._get_project_state('last_index_time')
+        
+        conn.close()
+        
+        return {
+            'total_testcases': total_testcases,
+            'total_files': total_files,
+            'last_index_time': last_index_time,
+            'is_first_open': last_index_time is None
+        }
+    
+    def start_file_watcher(self):
+        """Start file watcher"""
+        if self.file_watcher is None:
+            self.file_watcher = FileWatcher(
+                watch_paths=[self.project_path],
+                callback=self._on_file_changed,
+                check_interval=2.0
+            )
+        
+        if not self.file_watcher.is_watching():
+            self.file_watcher.start()
+            print("File watcher started")
+    
+    def stop_file_watcher(self):
+        """Stop file watcher"""
+        if self.file_watcher and self.file_watcher.is_watching():
+            self.file_watcher.stop()
+            print("File watcher stopped")
+    
+    def _on_file_changed(self, file_path: str, event_type: str):
+        """File change callback"""
+        if not file_path.lower().endswith('.md'):
+            return
+        
+        print(f"File {event_type}: {file_path}")
+        
+        try:
+            if event_type in ('created', 'modified'):
+                self._schedule_file_update(file_path)
+            elif event_type == 'deleted':
+                self._remove_testcases_by_file(file_path)
+        except Exception as e:
+            print(f"Error handling file change {file_path}: {e}")
+    
+    def _schedule_file_update(self, file_path: str):
+        """Schedule file update (delayed batch processing)"""
+        if self._update_timer:
+            self._update_timer.cancel()
+        
+        # Update after 1 second delay to avoid frequent updates
+        import threading
+        self._update_timer = threading.Timer(1.0, self._update_single_file, args=[file_path])
+        self._update_timer.start()
+    
+    def _update_single_file(self, file_path: str):
+        """Update index for single file"""
+        try:
+            print(f"Starting update for file: {file_path}")
+            
+            # Remove old index
+            self._remove_testcases_by_file(file_path)
+            
+            # Parse and add new index
+            testcases = self._parse_markdown_testcase(file_path)
+            print(f"Parsed {len(testcases)} test cases from {file_path}")
+            
+            if testcases:
+                self._add_testcases(testcases, file_path)
+                
+                # Update metadata
+                file_mtime = os.path.getmtime(file_path)
+                file_hash = self._get_file_hash(file_path)
+                sample_uuid = testcases[0].uuid
+                self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
+                
+                print(f"Successfully updated index for file: {file_path}")
+            else:
+                print(f"No test cases found in file: {file_path}")
+        
+        except sqlite3.Error as e:
+            print(f"SQLite error updating file {file_path}: {e}")
+        except Exception as e:
+            print(f"General error updating file {file_path}: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        finally:
+            self._update_timer = None
+    
+    def __del__(self):
+        """Destructor to ensure resource cleanup"""
+        self.stop_file_watcher()

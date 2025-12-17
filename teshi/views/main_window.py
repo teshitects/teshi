@@ -8,7 +8,9 @@ from PySide6.QtGui import QAction, QIcon, QCloseEvent
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.widgets.editor_widget import EditorWidget
+from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog
 from teshi.utils.workspace_manager import WorkspaceManager
+from teshi.utils.testcase_index_manager import TestCaseIndexManager
 
 
 class MainWindow(QMainWindow):
@@ -24,9 +26,15 @@ class MainWindow(QMainWindow):
         self.workspace_manager = WorkspaceManager(project_path, self)
         self.workspace_manager.set_main_window(self)
         
+        # Initialize test case index manager
+        self.index_manager = TestCaseIndexManager(project_path)
+        
         self._setup_menubar()
         self._setup_layout()
         self._setup_shortcuts()
+        
+        # Build test case index if needed
+        self._initialize_testcase_index()
         
         # Restore workspace state
         self.workspace_manager.restore_workspace(self)
@@ -42,6 +50,16 @@ class MainWindow(QMainWindow):
         file_menu.addAction(import_action)
         import_action.triggered.connect(self._import_test_cases)
 
+        # Search Menu
+        search_menu = menubar.addMenu("Search")
+        search_testcase_action = QAction("Search Test Cases", self)
+        search_menu.addAction(search_testcase_action)
+        search_testcase_action.triggered.connect(self._show_testcase_search_dialog)
+        
+        rebuild_index_action = QAction("Rebuild Index", self)
+        search_menu.addAction(rebuild_index_action)
+        rebuild_index_action.triggered.connect(self._rebuild_testcase_index)
+
         # Help Menu
         help_menu = menubar.addMenu("Help")
         about_action = QAction("About", self)
@@ -52,6 +70,48 @@ class MainWindow(QMainWindow):
         from teshi.views.widgets.about_dialog import AboutDialog
         about_dialog = AboutDialog()
         about_dialog.exec()
+
+    def _initialize_testcase_index(self):
+        """Initialize test case index"""
+        try:
+            if self.index_manager.is_first_open():
+                self.show_message("Building test case index for the first time...")
+                count = self.index_manager.build_index()
+                self.show_message(f"Indexed {count} files", 3000)
+            else:
+                # Incremental update index
+                self.show_message("Updating test case index...")
+                count = self.index_manager.build_index()
+                self.show_message(f"Updated {count} files", 3000)
+            
+            # Start file watcher
+            self.index_manager.start_file_watcher()
+            
+        except Exception as e:
+            self.show_message(f"Error building test case index: {e}", 5000)
+
+    def _show_testcase_search_dialog(self):
+        """Show test case search dialog"""
+        try:
+            dialog = TestcaseSearchDialog(self.index_manager, self)
+            dialog.exec()
+        except Exception as e:
+            self.show_message(f"Error opening search dialog: {e}", 5000)
+
+    def _rebuild_testcase_index(self):
+        """Rebuild test case index"""
+        try:
+            # Stop file watcher
+            self.index_manager.stop_file_watcher()
+            
+            self.show_message("Rebuilding test case index...")
+            count = self.index_manager.build_index(force_rebuild=True)
+            self.show_message(f"Rebuilt index: {count} files processed", 3000)
+            
+            # Restart file watcher
+            self.index_manager.start_file_watcher()
+        except Exception as e:
+            self.show_message(f"Error rebuilding test case index: {e}", 5000)
 
     def _import_test_cases(self):
         from PySide6.QtWidgets import QFileDialog
@@ -117,6 +177,12 @@ class MainWindow(QMainWindow):
         save_action.setShortcut(Qt.CTRL | Qt.Key_S)
         save_action.triggered.connect(self._save_current_editor)
         self.addAction(save_action)
+        
+        # Search shortcut
+        search_action = QAction("Search Test Cases", self)
+        search_action.setShortcut(Qt.CTRL | Qt.SHIFT | Qt.Key_F)
+        search_action.triggered.connect(self._show_testcase_search_dialog)
+        self.addAction(search_action)
 
     def _save_current_editor(self):
         current = self.tabs.currentWidget()
@@ -197,6 +263,11 @@ class MainWindow(QMainWindow):
         """Window close event, save workspace state"""
         # Stop delayed save timer
         self.workspace_manager.save_timer.stop()
+        
+        # Stop file watcher
+        if hasattr(self, 'index_manager'):
+            self.index_manager.stop_file_watcher()
+        
         # Save workspace immediately
         self.workspace_manager.save_workspace(self)
         event.accept()
