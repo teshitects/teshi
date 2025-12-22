@@ -217,3 +217,5 @@ __marimo__/
 
 # Teshi workspace configuration
 .teshi/
+
+generated_test_cases/
