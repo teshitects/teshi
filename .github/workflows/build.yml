@@ -4,13 +4,26 @@ on:
   push:
     tags:
       - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.vscode/**'
+      - '.idea/**'
   workflow_dispatch:
+
+# Prevent multiple builds running simultaneously
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: windows-latest
     permissions:
       contents: write
+    
+    # Set timeout to prevent hanging builds
+    timeout-minutes: 30
     
     defaults:
       run:
@@ -19,27 +32,28 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # Shallow clone for faster checkout
       
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.13'
+        cache: 'pip'  # Cache pip packages
         
     - name: Install Poetry
       run: |
         curl -sSL https://install.python-poetry.org | python3 -
-        # Add both possible Poetry paths to GITHUB_PATH
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         echo "$APPDATA/Python/Scripts" >> $GITHUB_PATH
         
     - name: Verify Poetry Installation
       run: |
-        # Add Poetry to PATH for this step
         export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
         poetry --version
         
     - name: Cache Poetry dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cache/pypoetry
@@ -48,45 +62,48 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-poetry-
         
+    - name: Configure Poetry
+      run: |
+        export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
+        poetry config virtualenvs.in-project true
+        
     - name: Install dependencies
       run: |
         export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
-        poetry install --with build
+        poetry install --with build --no-interaction --no-ansi
         
     - name: Build executable
       run: |
         export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
-        poetry run pyinstaller --windowed --name teshi --icon=teshi/assets/teshi_icon256.png --add-data "teshi/assets;assets" teshi/main.py
+        poetry run pyinstaller --windowed --name teshi --icon=teshi/assets/teshi_icon256.png --add-data "teshi/assets;assets" teshi/main.py --clean
         
     - name: Create release package
       run: |
         mkdir -p release
         if [ -d "dist/teshi" ]; then
-          # Create a zip file instead of copying loose files
+          # Create a zip file
           cd dist
-          7z a -tzip ../release/teshi-windows-x64.zip teshi/*
+          7z a -tzip -mx5 ../release/teshi-windows-x64.zip teshi/*
           cd ..
-        fi
-        if [ -f "README.md" ]; then
-          cp README.md release/
         fi
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
+      if: startsWith(github.ref, 'refs/tags/')
       with:
         name: teshi-windows-x64
         path: release/
-        retention-days: 30
+        retention-days: 7  # Reduced from 30 to save storage
+        compression-level: 6
         
     - name: Create Release
       if: startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
-        files: |
-          release/teshi-windows-x64.zip
-          release/README.md
+        files: release/teshi-windows-x64.zip
         draft: false
         prerelease: false
         generate_release_notes: true
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
