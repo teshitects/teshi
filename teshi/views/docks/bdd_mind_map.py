@@ -325,11 +325,6 @@ class BDDMindMapDock(QWidget):
         self.zoom_out_btn.setMaximumWidth(30)
         toolbar_layout.addWidget(self.zoom_out_btn)
 
-        self.reset_zoom_btn = QPushButton("Reset")
-        self.reset_zoom_btn.setToolTip("Reset zoom")
-        self.reset_zoom_btn.setMaximumWidth(40)
-        toolbar_layout.addWidget(self.reset_zoom_btn)
-
         # Auto layout button
         self.auto_layout_btn = QPushButton("Auto Layout")
         self.auto_layout_btn.setToolTip("Automatically adjust node layout")
@@ -363,7 +358,6 @@ class BDDMindMapDock(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_bdd_data)
         self.zoom_in_btn.clicked.connect(self.mind_map_view.zoom_in)
         self.zoom_out_btn.clicked.connect(self.mind_map_view.zoom_out)
-        self.reset_zoom_btn.clicked.connect(self.mind_map_view.reset_zoom)
         self.auto_layout_btn.clicked.connect(self.auto_layout)
 
         self.mind_map_view.node_clicked.connect(self.on_node_clicked)

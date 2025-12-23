@@ -2,7 +2,7 @@ import os
 import json
 import time
 from typing import Dict, List, Any
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QTimer, Qt
 
 
 class WorkspaceManager(QObject):
@@ -201,6 +201,7 @@ class WorkspaceManager(QObject):
         dock_states = workspace_data.get('dock_states', {})
         
         # Restore project dock
+        project_width = None
         if hasattr(main_window, 'project_dock') and 'project' in dock_states:
             project_state = dock_states['project']
             # Handle both old format (boolean) and new format (dict)
@@ -216,12 +217,11 @@ class WorkspaceManager(QObject):
                 else:
                     main_window.project_dock.hide()
                 
-                # Restore width (use resize instead of setFixedWidth to allow user adjustment)
-                width = project_state.get('width')
-                if width and width > 0:
-                    main_window.project_dock.resize(width, main_window.project_dock.height())
+                # Save width for later restoration
+                project_width = project_state.get('width')
         
         # Restore BDD Mind Map dock
+        bdd_width = None
         if hasattr(main_window, 'bdd_mind_map_dock') and 'bdd_mind_map' in dock_states:
             bdd_state = dock_states['bdd_mind_map']
             if bdd_state.get('visible', False):
@@ -229,10 +229,18 @@ class WorkspaceManager(QObject):
             else:
                 main_window.bdd_mind_map_dock.hide()
             
-            # Restore width (use resize instead of setFixedWidth to allow user adjustment)
-            width = bdd_state.get('width')
-            if width and width > 0:
-                main_window.bdd_mind_map_dock.resize(width, main_window.bdd_mind_map_dock.height())
+            # Save width for later restoration
+            bdd_width = bdd_state.get('width')
+        
+        # Use QTimer to restore dock widths after the window is fully initialized
+        from PySide6.QtCore import QTimer
+        def restore_dock_widths():
+            if project_width and project_width > 0 and hasattr(main_window, 'project_dock'):
+                main_window.resizeDocks([main_window.project_dock], [project_width], Qt.Horizontal)
+            if bdd_width and bdd_width > 0 and hasattr(main_window, 'bdd_mind_map_dock'):
+                main_window.resizeDocks([main_window.bdd_mind_map_dock], [bdd_width], Qt.Horizontal)
+        
+        QTimer.singleShot(100, restore_dock_widths)
         
         # Restore BDD mode
         bdd_mode = workspace_data.get('bdd_mode', False)
