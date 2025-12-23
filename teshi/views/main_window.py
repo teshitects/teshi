@@ -183,17 +183,6 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
 
-        # Add global BDD mode button to left toolbar
-        self.global_bdd_button = QToolButton()
-        self.global_bdd_button.setText("BDD")
-        self.global_bdd_button.setCheckable(True)
-        self.global_bdd_button.setToolTip("Toggle Global BDD Mode")
-        self.global_bdd_button.clicked.connect(self._toggle_global_bdd_mode)
-        
-        # Add a separator and BDD button to left toolbar
-        left_toolbar.addSeparator()
-        left_toolbar.addWidget(self.global_bdd_button)
-
         # Right Toolbar
         right_toolbar = QToolBar("RightToolbar", self)
         right_toolbar.setOrientation(Qt.Vertical)
@@ -369,9 +358,6 @@ class MainWindow(QMainWindow):
     def _toggle_global_bdd_mode(self):
         """Toggle global BDD mode for all tabs"""
         self._global_bdd_mode = not self._global_bdd_mode
-        
-        # Update button state
-        self.global_bdd_button.setChecked(self._global_bdd_mode)
         
         # Emit signal to all editors
         self.global_bdd_mode_changed.emit(self._global_bdd_mode)

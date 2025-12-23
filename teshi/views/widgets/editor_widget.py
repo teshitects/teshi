@@ -36,7 +36,6 @@ class EditorWidget(QWidget):
         
         # BDD toggle button
         self.bdd_button = QPushButton("BDD")
-        self.bdd_button.setCheckable(True)
         self.bdd_button.setMaximumWidth(60)
         self.bdd_button.setToolTip("Toggle BDD mode")
         self.bdd_button.clicked.connect(self._toggle_bdd_mode)
@@ -79,7 +78,6 @@ class EditorWidget(QWidget):
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
-            self.bdd_button.setChecked(False)
             
             # If global BDD mode is enabled, disable it
             if self._global_bdd_mode:
@@ -99,7 +97,6 @@ class EditorWidget(QWidget):
                 self.stacked_widget.setCurrentWidget(self.bdd_view)
                 self._is_bdd_mode = True
                 self.bdd_button.setText("Raw")
-                self.bdd_button.setChecked(True)
                 
                 # If this is the first local BDD activation, trigger global mode
                 if not self._global_bdd_mode:
@@ -113,7 +110,6 @@ class EditorWidget(QWidget):
                 
             except Exception as e:
                 QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
-                self.bdd_button.setChecked(False)
     
     def set_global_bdd_mode(self, enabled: bool):
         """Set global BDD mode state"""
@@ -128,7 +124,6 @@ class EditorWidget(QWidget):
                 self.stacked_widget.setCurrentWidget(self.bdd_view)
                 self._is_bdd_mode = True
                 self.bdd_button.setText("Raw")
-                self.bdd_button.setChecked(True)
             except Exception as e:
                 QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
         elif not enabled and self._is_bdd_mode:
@@ -136,7 +131,6 @@ class EditorWidget(QWidget):
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
-            self.bdd_button.setChecked(False)
     
     def toPlainText(self) -> str:
         """Get plain text from the editor"""
