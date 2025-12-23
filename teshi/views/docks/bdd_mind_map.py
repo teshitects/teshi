@@ -48,18 +48,19 @@ class BDDNodeItem(QGraphicsEllipseItem):
         self.connections = []
 
     def _setup_colors(self):
-        """Set node color"""
+        """Set node color - 与左侧BDD视图保持一致"""
         colors = {
-            'scenario': QColor(52, 152, 219),  # Blue
-            'given': QColor(46, 204, 113),  # Green
-            'when': QColor(241, 196, 15),  # Yellow
-            'then': QColor(231, 76, 60),  # Red
-            'notes': QColor(155, 89, 182)  # Purple
+            'scenario': QColor(96, 125, 139),  # Blue Grey #607D8B - 场景节点用灰蓝色,更沉稳
+            'given': QColor(76, 175, 80),  # Green #4CAF50 - 与BDD视图一致
+            'when': QColor(255, 152, 0),  # Orange #FF9800 - 与BDD视图一致
+            'then': QColor(33, 150, 243),  # Blue #2196F3 - 与BDD视图一致
+            'notes': QColor(156, 39, 176)  # Purple #9C27B0 - 与BDD视图一致
         }
 
         color = colors.get(self.node_type, QColor(149, 165, 166))
         self.setBrush(QBrush(color))
-        self.setPen(QPen(Qt.white, 2))
+        # 移除边框,避免遮挡文字
+        self.setPen(QPen(Qt.NoPen))
 
     def itemChange(self, change, value):
         """Handle item changes and update connections"""
@@ -82,7 +83,13 @@ class BDDConnectionItem(QGraphicsLineItem):
 
         super().__init__(parent)
 
-        self.setPen(QPen(QColor(100, 100, 100, 150), 2, Qt.SolidLine))
+        # 更轻盈的连接线样式:虚线、更细、更透明
+        pen = QPen(QColor(150, 150, 150, 80), 1, Qt.DashLine)
+        pen.setDashPattern([3, 3])  # 虚线模式
+        self.setPen(pen)
+        
+        # 设置层级,让连接线在节点下方
+        self.setZValue(-1)
 
         start_node.add_connection(self)
         end_node.add_connection(self)
@@ -121,9 +128,9 @@ class BDDMindMapView(QGraphicsView):
         self.nodes = {}
         self.connections = []
 
-        # Layout parameters
-        self.level_height = 100
-        self.node_spacing = 120
+        # Layout parameters - 更紧凑的布局
+        self.level_height = 80  # 垂直间距
+        self.node_spacing = 120  # 水平间距
 
         # Zoom control
         self._scale_factor = 1.0
@@ -214,8 +221,8 @@ class BDDMindMapView(QGraphicsView):
     def add_bdd_scenario(self, scenario_data: dict, scenario_index: int):
         """Add BDD scenario to the graph"""
         # Scenario node
-        scenario_x = scenario_index * 300
-        scenario_y = 50
+        scenario_x = scenario_index * 400
+        scenario_y = 0
 
         scenario_node = BDDNodeItem(
             'scenario',
@@ -227,15 +234,27 @@ class BDDMindMapView(QGraphicsView):
         self.scene.addItem(scenario_node)
         self.nodes[f'scenario_{scenario_index}'] = scenario_node
 
-        # Current Y position
-        current_y = scenario_y + self.level_height
-
-        # Given nodes
-        if scenario_data.get('given'):
-            given_x = scenario_x - 150
-            for i, given in enumerate(scenario_data['given']):
+        # 采用三列错位布局,避免节点文字相互遮挡
+        # 计算每列的起始Y位置(错开排列)
+        base_y = scenario_y + self.level_height
+        
+        given_list = scenario_data.get('given', [])
+        when_list = scenario_data.get('when', [])
+        then_list = scenario_data.get('then', [])
+        
+        # 水平间距
+        horizontal_spacing = 120
+        # 垂直错位偏移量
+        offset_step = self.level_height / 3  # 每列错开1/3行高
+        
+        # Given nodes - 左列 (基准位置)
+        if given_list:
+            given_x = scenario_x - horizontal_spacing
+            given_offset = 0  # 左列不偏移
+            for i, given in enumerate(given_list):
                 given_content = given['content'] if isinstance(given, dict) else given
-                given_node = BDDNodeItem('given', given_content, '', given_x, current_y)
+                given_y = base_y + given_offset + i * self.level_height
+                given_node = BDDNodeItem('given', given_content, '', given_x, given_y)
                 self.scene.addItem(given_node)
                 self.nodes[f'given_{scenario_index}_{i}'] = given_node
 
@@ -244,14 +263,14 @@ class BDDMindMapView(QGraphicsView):
                 self.scene.addItem(connection)
                 self.connections.append(connection)
 
-                current_y += self.level_height
-
-        # When nodes
-        if scenario_data.get('when'):
+        # When nodes - 中列 (向下偏移)
+        if when_list:
             when_x = scenario_x
-            for i, when in enumerate(scenario_data['when']):
+            when_offset = offset_step  # 中列向下偏移1/3
+            for i, when in enumerate(when_list):
                 when_content = when['content'] if isinstance(when, dict) else when
-                when_node = BDDNodeItem('when', when_content, '', when_x, current_y)
+                when_y = base_y + when_offset + i * self.level_height
+                when_node = BDDNodeItem('when', when_content, '', when_x, when_y)
                 self.scene.addItem(when_node)
                 self.nodes[f'when_{scenario_index}_{i}'] = when_node
 
@@ -260,14 +279,14 @@ class BDDMindMapView(QGraphicsView):
                 self.scene.addItem(connection)
                 self.connections.append(connection)
 
-                current_y += self.level_height
-
-        # Then nodes
-        if scenario_data.get('then'):
-            then_x = scenario_x + 150
-            for i, then in enumerate(scenario_data['then']):
+        # Then nodes - 右列 (向下偏移更多)
+        if then_list:
+            then_x = scenario_x + horizontal_spacing
+            then_offset = offset_step * 2  # 右列向下偏移2/3
+            for i, then in enumerate(then_list):
                 then_content = then['content'] if isinstance(then, dict) else then
-                then_node = BDDNodeItem('then', then_content, '', then_x, current_y)
+                then_y = base_y + then_offset + i * self.level_height
+                then_node = BDDNodeItem('then', then_content, '', then_x, then_y)
                 self.scene.addItem(then_node)
                 self.nodes[f'then_{scenario_index}_{i}'] = then_node
 
@@ -276,12 +295,11 @@ class BDDMindMapView(QGraphicsView):
                 self.scene.addItem(connection)
                 self.connections.append(connection)
 
-                current_y += self.level_height
-
-        # Notes node
+        # Notes node - 放在scenario右上角
         if scenario_data.get('notes'):
-            notes_x = scenario_x + 300
-            notes_node = BDDNodeItem('notes', 'Notes', scenario_data['notes'], notes_x, scenario_y)
+            notes_x = scenario_x + horizontal_spacing * 1.5
+            notes_y = scenario_y - 60
+            notes_node = BDDNodeItem('notes', 'Notes', scenario_data['notes'], notes_x, notes_y)
             self.scene.addItem(notes_node)
             self.nodes[f'notes_{scenario_index}'] = notes_node
 
