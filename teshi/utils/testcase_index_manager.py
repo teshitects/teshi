@@ -66,7 +66,7 @@ class TestCaseIndexManager:
                     expected_results,
                     notes,
                     file_path,
-                    tokenize = "porter unicode61 remove_diacritics 0"
+                    tokenize = "trigram"
                 )
             """)
             print("Created new FTS5 table")
@@ -177,7 +177,7 @@ class TestCaseIndexManager:
                 # Handle other fields - support both English and Chinese
                 if title in ['Number', '编号']:
                     current_testcase.number = content.strip()
-                elif title in ['Preconditions', '前置条件']:
+                elif title in ['Preconditions', '前置条件', '前提条件']:
                     current_testcase.preconditions = content.strip()
                 elif title in ['Operation Steps', '操作步骤', '测试步骤']:
                     current_testcase.steps = content.strip()

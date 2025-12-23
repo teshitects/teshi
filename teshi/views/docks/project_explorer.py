@@ -26,7 +26,10 @@ class ProjectExplorer(QTreeView):
         root_item.setEditable(False)
         root_item.setIcon(QIcon("assets/icons/folder.png"))
         root_item.setData(target_dir, Qt.UserRole)  # store real path
-        populate_tree(root_item, target_dir)
+        self.folder_icon = QIcon("assets/icons/folder.png")
+        self.file_icon = QIcon("assets/icons/testcase_normal.png")
+        self.unknown_file_icon = QIcon("assets/icons/unknown_file.png") 
+        self.populate_tree(root_item, target_dir)
 
         self.model = QStandardItemModel()
         self.model.appendRow(root_item)
@@ -199,25 +202,25 @@ class ProjectExplorer(QTreeView):
             self._restore_expanded_state(child_index, expanded_set)
 
 
-def populate_tree(parent_item, path):
-    try:
-        for entry in os.listdir(path):
-            full_path = os.path.join(path, entry)
-            if os.path.isdir(full_path):
-                item = QStandardItem(entry)
-                item.setEditable(False)
-                item.setIcon(QIcon("assets/icons/folder.png"))
-                item.setData(full_path, Qt.UserRole)
-                parent_item.appendRow(item)
-                populate_tree(item, full_path)
-            else:
-                item = QStandardItem(entry)
-                item.setEditable(False)
-                if full_path.endswith(".md"):
-                    item.setIcon(QIcon("assets/icons/testcase_normal.png"))
+    def populate_tree(self, parent_item, path):
+        try:
+            for entry in os.listdir(path):
+                full_path = os.path.join(path, entry)
+                if os.path.isdir(full_path):
+                    item = QStandardItem(entry)
+                    item.setEditable(False)
+                    item.setIcon(self.folder_icon)
+                    item.setData(full_path, Qt.UserRole)
+                    parent_item.appendRow(item)
+                    self.populate_tree(item, full_path)
                 else:
-                    item.setIcon(QIcon("assets/icons/unknown_file.png"))
-                item.setData(full_path, Qt.UserRole)
-                parent_item.appendRow(item)
-    except PermissionError:
-        pass
+                    item = QStandardItem(entry)
+                    item.setEditable(False)
+                    if full_path.endswith(".md"):
+                        item.setIcon(self.file_icon)
+                    else:
+                        item.setIcon(self.unknown_file_icon)
+                    item.setData(full_path, Qt.UserRole)
+                    parent_item.appendRow(item)
+        except PermissionError:
+            pass
