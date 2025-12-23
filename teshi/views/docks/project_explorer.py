@@ -29,11 +29,14 @@ class ProjectExplorer(QTreeView):
         self.folder_icon = QIcon("assets/icons/folder.png")
         self.file_icon = QIcon("assets/icons/testcase_normal.png")
         self.unknown_file_icon = QIcon("assets/icons/unknown_file.png") 
-        self.populate_tree(root_item, target_dir)
-
+        
         self.model = QStandardItemModel()
         self.model.appendRow(root_item)
         self.setModel(self.model)
+        
+        # Delay tree population to avoid blocking startup
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(50, lambda: self.populate_tree(root_item, target_dir))
 
         self.doubleClicked.connect(self.on_double_click)
 
@@ -42,8 +45,7 @@ class ProjectExplorer(QTreeView):
         self.customContextMenuRequested.connect(self.open_menu)
         
         # Connect expanded/collapsed signals
-        self.expanded.connect(self._on_expanded_collapsed)
-        self.collapsed.connect(self._on_expanded_collapsed)
+        self.expanded.connect(self._on_expanded)
 
     def on_double_click(self, index):
         item = self.model.itemFromIndex(index)
@@ -153,8 +155,20 @@ class ProjectExplorer(QTreeView):
     def get_item_path(self, item):
         return item.data(Qt.UserRole)
     
-    def _on_expanded_collapsed(self, index):
-        """Handle expanded/collapsed events"""
+    def _on_expanded(self, index):
+        """Handle expanded event with lazy loading"""
+        item = self.model.itemFromIndex(index)
+        if item and item.hasChildren():
+            # Check if this is a placeholder (has only one child called "Loading...")
+            if item.rowCount() == 1:
+                child = item.child(0, 0)
+                if child and child.text() == "Loading...":
+                    # Remove placeholder
+                    item.removeRow(0)
+                    # Load actual children
+                    path = item.data(Qt.UserRole)
+                    self.populate_tree(item, path, lazy_load=False)
+        
         self.state_changed.emit()
     
     def get_expanded_state(self) -> list:
@@ -202,25 +216,60 @@ class ProjectExplorer(QTreeView):
             self._restore_expanded_state(child_index, expanded_set)
 
 
-    def populate_tree(self, parent_item, path):
+    def populate_tree(self, parent_item, path, lazy_load=True):
+        """Populate tree with directory contents. If lazy_load=True, only load immediate children."""
         try:
-            for entry in os.listdir(path):
+            # Skip hidden directories and common build/cache directories
+            skip_dirs = {'.git', '.teshi', '__pycache__', 'node_modules', '.vscode', '.idea', 'build', 'dist'}
+            
+            entries = []
+            try:
+                entries = os.listdir(path)
+            except PermissionError:
+                return
+            
+            # Separate directories and files, sort them
+            dirs = []
+            files = []
+            
+            for entry in entries:
                 full_path = os.path.join(path, entry)
                 if os.path.isdir(full_path):
-                    item = QStandardItem(entry)
-                    item.setEditable(False)
-                    item.setIcon(self.folder_icon)
-                    item.setData(full_path, Qt.UserRole)
-                    parent_item.appendRow(item)
-                    self.populate_tree(item, full_path)
+                    if entry.startswith('.') or entry in skip_dirs:
+                        continue
+                    dirs.append((entry, full_path))
                 else:
-                    item = QStandardItem(entry)
-                    item.setEditable(False)
-                    if full_path.endswith(".md"):
-                        item.setIcon(self.file_icon)
-                    else:
-                        item.setIcon(self.unknown_file_icon)
-                    item.setData(full_path, Qt.UserRole)
-                    parent_item.appendRow(item)
+                    files.append((entry, full_path))
+            
+            # Sort directories and files separately
+            dirs.sort(key=lambda x: x[0].lower())
+            files.sort(key=lambda x: x[0].lower())
+            
+            # Add directories first
+            for entry_name, full_path in dirs:
+                item = QStandardItem(entry_name)
+                item.setEditable(False)
+                item.setIcon(self.folder_icon)
+                item.setData(full_path, Qt.UserRole)
+                
+                # Add a dummy child to show expand arrow for lazy loading
+                if lazy_load:
+                    dummy_item = QStandardItem("Loading...")
+                    dummy_item.setEditable(False)
+                    item.appendRow(dummy_item)
+                
+                parent_item.appendRow(item)
+            
+            # Then add files
+            for entry_name, full_path in files:
+                item = QStandardItem(entry_name)
+                item.setEditable(False)
+                if full_path.endswith(".md"):
+                    item.setIcon(self.file_icon)
+                else:
+                    item.setIcon(self.unknown_file_icon)
+                item.setData(full_path, Qt.UserRole)
+                parent_item.appendRow(item)
+                
         except PermissionError:
             pass

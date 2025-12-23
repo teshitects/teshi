@@ -225,9 +225,16 @@ class TestCaseIndexManager:
     def _find_markdown_files(self) -> List[str]:
         """Find all Markdown files in the project"""
         md_files = []
+        # Skip common directories that don't contain test cases
+        skip_dirs = {'.git', '.teshi', '__pycache__', 'node_modules', '.vscode', '.idea', 'build', 'dist'}
+        
         for root, dirs, files in os.walk(self.project_path):
-            # Skip .git directory and other hidden directories
-            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            # Skip hidden directories and common build/cache directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in skip_dirs]
+            
+            # Skip the .teshi directory completely
+            if '.teshi' in root.split(os.sep):
+                continue
             
             for file in files:
                 if file.endswith('.md'):
@@ -327,81 +334,119 @@ class TestCaseIndexManager:
                 print(f"Error removing existing database: {e}")
         
         md_files = self._find_markdown_files()
+        print(f"Found {len(md_files)} markdown files to process")
+        
         updated_files = 0
         new_files = 0
         
-        for file_path in md_files:
-            try:
-                # 获取文件修改时间和哈希
-                file_mtime = os.path.getmtime(file_path)
-                file_hash = self._get_file_hash(file_path)
-                
-                # Check if file already exists and is unchanged
-                existing_meta = self._get_file_meta(file_path)
-                
-                if existing_meta:
-                    if existing_meta['file_mtime'] == file_mtime and existing_meta['file_hash'] == file_hash:
-                        continue  # File unchanged, skip
-                    
-                    updated_files += 1
-                else:
-                    new_files += 1
-                
-                # Parse test cases
-                testcases = self._parse_markdown_testcase(file_path)
-                print(f"Parsed {len(testcases)} test cases from {file_path}")
-                
-                # Always remove old index first (if exists)
-                self._remove_testcases_by_file(file_path)
-                
-                # Add new index if testcases found
-                if testcases:
-                    self._add_testcases(testcases, file_path)
-                    
-                    # Update metadata using first testcase's UUID
-                    sample_uuid = testcases[0].uuid
-                else:
-                    # Use dummy UUID if no testcases found
-                    sample_uuid = self._generate_uuid("dummy", file_path)
-                    print(f"No test cases found in {file_path}")
-                
-                # Always update metadata
-                self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
-                
-            except sqlite3.Error as e:
-                print(f"SQLite error processing file {file_path}: {e}")
-                # If database error, try to rebuild database
-                if "recursively defined fts5" in str(e).lower():
-                    print("Detected FTS5 recursive definition error, attempting rebuild...")
-                    return self.build_index(force_rebuild=True)
-            except Exception as e:
-                print(f"Error processing file {file_path}: {e}")
+        # Batch database operations for better performance
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        # Clean up index for non-existent files
-        self._cleanup_orphaned_files(md_files)
-        
-        # Update project state
-        self._set_project_state('last_index_time', datetime.now().isoformat())
+        try:
+            for file_path in md_files:
+                try:
+                    # 获取文件修改时间和哈希
+                    file_mtime = os.path.getmtime(file_path)
+                    file_hash = self._get_file_hash(file_path)
+                    
+                    # Check if file already exists and is unchanged
+                    existing_meta = self._get_file_meta(file_path)
+                    
+                    if existing_meta:
+                        if existing_meta['file_mtime'] == file_mtime and existing_meta['file_hash'] == file_hash:
+                            continue  # File unchanged, skip
+                        
+                        updated_files += 1
+                    else:
+                        new_files += 1
+                    
+                    # Parse test cases
+                    testcases = self._parse_markdown_testcase(file_path)
+                    
+                    # Remove old index first (if exists)
+                    cursor.execute("DELETE FROM testcases_fts WHERE file_path = ?", (file_path,))
+                    
+                    # Add new index if testcases found
+                    if testcases:
+                        for testcase in testcases:
+                            cursor.execute("""
+                                INSERT INTO testcases_fts (uuid, name, preconditions, steps, expected_results, notes, file_path)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                testcase.uuid,
+                                testcase.name,
+                                testcase.preconditions,
+                                testcase.steps,
+                                testcase.expected_results,
+                                testcase.notes,
+                                file_path
+                            ))
+                        
+                        # Update metadata using first testcase's UUID
+                        sample_uuid = testcases[0].uuid
+                    else:
+                        # Use dummy UUID if no testcases found
+                        sample_uuid = self._generate_uuid("dummy", file_path)
+                    
+                    # Update metadata
+                    now = datetime.now().isoformat()
+                    cursor.execute("""
+                        INSERT OR REPLACE INTO testcases_meta (uuid, file_path, file_mtime, file_hash, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, 
+                            COALESCE((SELECT created_at FROM testcases_meta WHERE file_path = ?), ?), ?)
+                    """, (sample_uuid, file_path, file_mtime, file_hash, file_path, now, now))
+                    
+                except sqlite3.Error as e:
+                    print(f"SQLite error processing file {file_path}: {e}")
+                    # If database error, try to rebuild database
+                    if "recursively defined fts5" in str(e).lower():
+                        print("Detected FTS5 recursive definition error, attempting rebuild...")
+                        conn.close()
+                        return self.build_index(force_rebuild=True)
+                except Exception as e:
+                    print(f"Error processing file {file_path}: {e}")
+            
+            # Commit all changes at once
+            conn.commit()
+            
+            # Clean up index for non-existent files
+            self._cleanup_orphaned_files(md_files, cursor)
+            
+            # Update project state
+            self._set_project_state('last_index_time', datetime.now().isoformat())
+            
+        finally:
+            conn.close()
         
         print(f"Index built: {new_files} new files, {updated_files} updated files")
         return new_files + updated_files
     
-    def _cleanup_orphaned_files(self, existing_files: List[str]):
+    def _cleanup_orphaned_files(self, existing_files: List[str], cursor=None):
         """Clean up index for non-existent files"""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
+        close_conn = False
+        if cursor is None:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            close_conn = True
         
-        # Get all indexed files
-        cursor.execute("SELECT DISTINCT file_path FROM testcases_meta")
-        indexed_files = [row[0] for row in cursor.fetchall()]
-        
-        # Remove non-existent files
-        for file_path in indexed_files:
-            if file_path not in existing_files:
-                self._remove_testcases_by_file(file_path)
-                print(f"Removed index for deleted file: {file_path}")
-        
-        conn.close()
+        try:
+            # Get all indexed files
+            cursor.execute("SELECT DISTINCT file_path FROM testcases_meta")
+            indexed_files = [row[0] for row in cursor.fetchall()]
+            
+            # Remove non-existent files
+            for file_path in indexed_files:
+                if file_path not in existing_files:
+                    cursor.execute("DELETE FROM testcases_fts WHERE file_path = ?", (file_path,))
+                    cursor.execute("DELETE FROM testcases_meta WHERE file_path = ?", (file_path,))
+                    print(f"Removed index for deleted file: {file_path}")
+            
+            if close_conn:
+                conn.commit()
+        finally:
+            if close_conn:
+                conn.close()
     
     def _set_project_state(self, key: str, value: str):
         """Set project state"""

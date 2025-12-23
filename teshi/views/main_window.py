@@ -33,8 +33,8 @@ class MainWindow(QMainWindow):
         self._setup_layout()
         self._setup_shortcuts()
         
-        # Build test case index if needed
-        self._initialize_testcase_index()
+        # Initialize test case index building in background
+        QTimer.singleShot(100, self._initialize_testcase_index)
         
         # Restore workspace state
         self.workspace_manager.restore_workspace(self)
@@ -72,23 +72,42 @@ class MainWindow(QMainWindow):
         about_dialog.exec()
 
     def _initialize_testcase_index(self):
-        """Initialize test case index"""
+        """Initialize test case index in background"""
         try:
             if self.index_manager.is_first_open():
                 self.show_message("Building test case index for the first time...")
-                count = self.index_manager.build_index()
-                self.show_message(f"Indexed {count} files", 3000)
             else:
                 # Incremental update index
                 self.show_message("Updating test case index...")
-                count = self.index_manager.build_index()
-                self.show_message(f"Updated {count} files", 3000)
             
-            # Start file watcher
+            # Start file watcher first
             self.index_manager.start_file_watcher()
             
+            # Build index in background thread
+            from PySide6.QtCore import QThread, Signal
+            class IndexBuilderThread(QThread):
+                finished = Signal(int)
+                error = Signal(str)
+                
+                def __init__(self, index_manager):
+                    super().__init__()
+                    self.index_manager = index_manager
+                
+                def run(self):
+                    try:
+                        count = self.index_manager.build_index()
+                        self.finished.emit(count)
+                    except Exception as e:
+                        self.error.emit(str(e))
+            
+            # Start background indexing
+            self.index_thread = IndexBuilderThread(self.index_manager)
+            self.index_thread.finished.connect(lambda count: self.show_message(f"Indexed {count} files", 3000))
+            self.index_thread.error.connect(lambda error: self.show_message(f"Error building test case index: {error}", 5000))
+            self.index_thread.start()
+            
         except Exception as e:
-            self.show_message(f"Error building test case index: {e}", 5000)
+            self.show_message(f"Error initializing test case index: {e}", 5000)
 
     def _show_testcase_search_dialog(self):
         """Show test case search dialog"""

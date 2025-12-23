@@ -26,10 +26,11 @@ class FileWatcher:
         self._thread = None
         self._lock = Lock()
         
-        # Initialize file status
-        self._scan_files()
+        # Delay initial scan to avoid blocking startup
+        import threading
+        threading.Thread(target=self._scan_files, kwargs={'initial_scan': True}, daemon=True).start()
     
-    def _scan_files(self):
+    def _scan_files(self, initial_scan: bool = False):
         """Scan all files and record modification times"""
         with self._lock:
             current_files = set()
@@ -54,7 +55,9 @@ class FileWatcher:
                     if file_path not in self._file_mtimes:
                         # New file
                         self._file_mtimes[file_path] = mtime
-                        self._safe_callback(file_path, 'created')
+                        # Only trigger callback if this is not the initial scan
+                        if not initial_scan:
+                            self._safe_callback(file_path, 'created')
                     elif self._file_mtimes[file_path] != mtime:
                         # File modified
                         self._file_mtimes[file_path] = mtime
@@ -62,11 +65,12 @@ class FileWatcher:
                 except OSError:
                     continue
             
-            # Detect deleted files
-            deleted_files = set(self._file_mtimes.keys()) - current_files
-            for file_path in deleted_files:
-                del self._file_mtimes[file_path]
-                self._safe_callback(file_path, 'deleted')
+            # Detect deleted files (only on subsequent scans)
+            if not initial_scan:
+                deleted_files = set(self._file_mtimes.keys()) - current_files
+                for file_path in deleted_files:
+                    del self._file_mtimes[file_path]
+                    self._safe_callback(file_path, 'deleted')
     
     def _safe_callback(self, file_path: str, event_type: str):
         """Safely call callback function"""
