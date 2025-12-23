@@ -36,6 +36,12 @@ class MainWindow(QMainWindow):
         # Initialize test case index manager
         self.index_manager = TestCaseIndexManager(project_path)
         
+        # Timer for debouncing mind map updates
+        self._mind_map_update_timer = QTimer()
+        self._mind_map_update_timer.setSingleShot(True)
+        self._mind_map_update_timer.setInterval(500)  # 500ms delay
+        self._mind_map_update_timer.timeout.connect(self._do_update_mind_map)
+        
         self._setup_menubar()
         self._setup_layout()
         self._setup_shortcuts()
@@ -213,7 +219,7 @@ class MainWindow(QMainWindow):
         self.tabs.setTabsClosable(True)
         self.setCentralWidget(self.tabs)
         self.tabs.tabCloseRequested.connect(self._close_tab_requested)
-        self.tabs.currentChanged.connect(lambda: self.workspace_manager.trigger_save())
+        self.tabs.currentChanged.connect(self._on_tab_changed)
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
         self.explorer.state_changed.connect(self.workspace_manager.trigger_save)
 
@@ -298,6 +304,9 @@ class MainWindow(QMainWindow):
             lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
         )
         
+        # Connect editor content changes to mind map update (with debouncing)
+        editor.text_edit.textChanged.connect(self._schedule_mind_map_update)
+        
         # Connect to global BDD mode changes
         self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
         
@@ -307,6 +316,9 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
         self.tabs.setCurrentWidget(editor)
+        
+        # Update mind map for newly opened file
+        self._update_mind_map_for_current_file()
         
         # Trigger workspace save
         self.workspace_manager.trigger_save()
@@ -318,6 +330,33 @@ class MainWindow(QMainWindow):
                 title = f"{base_name}{' *' if dirty else ''}"
                 self.tabs.setTabText(i, title)
                 break
+    
+    def _on_tab_changed(self, index: int):
+        """Handle tab change event"""
+        # Update mind map immediately when switching tabs
+        self._do_update_mind_map()
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
+    
+    def _schedule_mind_map_update(self):
+        """Schedule a mind map update (with debouncing)"""
+        # Restart the timer - this effectively debounces rapid text changes
+        self._mind_map_update_timer.stop()
+        self._mind_map_update_timer.start()
+    
+    def _do_update_mind_map(self):
+        """Actually update the mind map"""
+        current_widget = self.tabs.currentWidget()
+        if isinstance(current_widget, EditorWidget):
+            file_path = current_widget.filePath
+            # Get current content from editor
+            content = current_widget.toPlainText()
+            # Update mind map dock with current file content
+            self.bdd_mind_map.load_bdd_from_content(file_path, content)
+    
+    def _update_mind_map_for_current_file(self):
+        """Update BDD mind map with current file content (immediate)"""
+        self._do_update_mind_map()
 
     def toggle_dock(self, dock):
         if dock.isVisible():
@@ -353,6 +392,10 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event: QCloseEvent):
         """Window close event, save workspace state"""
+        # Stop mind map update timer
+        if hasattr(self, '_mind_map_update_timer'):
+            self._mind_map_update_timer.stop()
+        
         # Stop delayed save timer
         self.workspace_manager.save_timer.stop()
         

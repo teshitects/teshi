@@ -464,3 +464,69 @@ class BDDMindMapDock(QWidget):
 
         except Exception as e:
             self.status_label.setText(f"Load failed: {str(e)}")
+    
+    def load_bdd_from_file(self, file_path: str):
+        """Load BDD data from a single file"""
+        try:
+            if not file_path or not file_path.endswith('.md'):
+                self.current_scenarios = []
+                self.update_mind_map()
+                self.status_label.setText("No valid file selected")
+                return
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            # Convert to BDD format
+            bdd_content = self.bdd_converter.convert_to_bdd(content)
+
+            # Parse BDD scenarios
+            scenarios = self.bdd_converter._parse_bdd_scenarios(bdd_content)
+            
+            self.current_scenarios = scenarios
+            self.update_mind_map()
+            
+            # Update status
+            import os
+            file_name = os.path.basename(file_path)
+            self.status_label.setText(f"Loaded {len(scenarios)} scenarios from {file_name}")
+
+        except Exception as e:
+            self.current_scenarios = []
+            self.update_mind_map()
+            self.status_label.setText(f"Load failed: {str(e)}")
+    
+    def load_bdd_from_content(self, file_path: str, content: str):
+        """Load BDD data from file content directly"""
+        try:
+            if not file_path or not file_path.endswith('.md'):
+                self.current_scenarios = []
+                self.update_mind_map()
+                self.status_label.setText("No valid file selected")
+                return
+            
+            if not content or not content.strip():
+                self.current_scenarios = []
+                self.update_mind_map()
+                self.status_label.setText("Empty file")
+                return
+
+            # Convert to BDD format
+            bdd_content = self.bdd_converter.convert_to_bdd(content)
+
+            # Parse BDD scenarios
+            scenarios = self.bdd_converter._parse_bdd_scenarios(bdd_content)
+            
+            self.current_scenarios = scenarios
+            self.update_mind_map()
+            
+            # Update status
+            import os
+            file_name = os.path.basename(file_path)
+            self.status_label.setText(f"Loaded {len(scenarios)} scenarios from {file_name}")
+
+        except Exception as e:
+            # Don't clear scenarios on error to avoid flickering
+            self.status_label.setText(f"Parse error: {str(e)}")
+
+
