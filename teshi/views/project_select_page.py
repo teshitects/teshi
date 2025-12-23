@@ -1,5 +1,6 @@
 # Import required modules
 import os
+from datetime import datetime
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QFrame, QSizePolicy, QDialog, \
     QLineEdit, QFormLayout, QFileDialog, QDialogButtonBox
 from PySide6.QtGui import QFont, QIcon
@@ -50,14 +51,16 @@ class ProjectSelectPage(QWidget):
         name_version_panel.setLayout(name_version_panel_layout)
         top_left_logo_layout.addWidget(name_version_panel, 1, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
+        # Get current build date
+        build_date = datetime.now().strftime("%Y.%m.%d")
+        version_label = QLabel(build_date)
+        version_label.setFont(QFont("Microsoft YaHei", 7))
+        version_label.setStyleSheet("color: gray;")
         name_label = QLabel("Teshi")
         name_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
         name_label.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        version_label = QLabel("2025.10.31")
-        version_label.setFont(QFont("Microsoft YaHei", 7))
-        version_label.setStyleSheet("color: gray;")
-        name_version_panel_layout.addWidget(name_label)
         name_version_panel_layout.addWidget(version_label)
+        name_version_panel_layout.addWidget(name_label)
 
         left_layout.addWidget(top_left_logo, 0, Qt.AlignmentFlag.AlignTop)
         left_layout.setContentsMargins(15,15,15,15)

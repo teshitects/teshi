@@ -2,6 +2,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QDialog, QHBoxLayout
 from PySide6.QtCore import Qt
 from teshi.utils.resource_path import resource_path
+from datetime import datetime
 
 
 class AboutDialog(QDialog):
@@ -17,7 +18,9 @@ class AboutDialog(QDialog):
 
         title_label = QLabel("Teshi")
 
-        version_label = QLabel("Version: 2025.10.31")
+        # Get current build date
+        build_date = datetime.now().strftime("%Y.%m.%d")
+        version_label = QLabel(f"Build Date: {build_date}")
 
         copyright_label = QLabel("Copyright © 2025 Teshi. All rights reserved.")
 
