@@ -10,6 +10,10 @@ jobs:
   build:
     runs-on: windows-latest
     
+    defaults:
+      run:
+        shell: bash
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -20,13 +24,13 @@ jobs:
         python-version: '3.13'
         
     - name: Install Poetry
-      shell: bash
       run: |
         curl -sSL https://install.python-poetry.org | python3 -
         echo "$HOME/.local/bin" >> $GITHUB_PATH
         
     - name: Verify Poetry Installation
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
         poetry --version
         
     - name: Cache Poetry dependencies
@@ -41,22 +45,24 @@ jobs:
         
     - name: Install dependencies
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
         poetry install --with build
         
     - name: Build executable
       run: |
+        export PATH="$HOME/.local/bin:$PATH"
         poetry run pyinstaller --windowed --name teshi --icon=teshi/assets/teshi_icon256.png --add-data "teshi/assets;assets" teshi/main.py
         
     - name: Create release package
-      shell: pwsh
+      shell: bash
       run: |
-        New-Item -ItemType Directory -Force -Path release
-        if (Test-Path "dist\teshi") {
-          Copy-Item -Path "dist\teshi" -Destination "release\teshi" -Recurse -Force
-        }
-        if (Test-Path "README.md") {
-          Copy-Item -Path "README.md" -Destination "release\" -Force
-        }
+        mkdir -p release
+        if [ -d "dist/teshi" ]; then
+          cp -r dist/teshi release/
+        fi
+        if [ -f "README.md" ]; then
+          cp README.md release/
+        fi
         
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
