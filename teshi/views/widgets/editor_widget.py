@@ -1,8 +1,9 @@
-from PySide6.QtWidgets import QTextEdit, QMessageBox, QFrame, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QToolButton
+from PySide6.QtWidgets import QTextEdit, QMessageBox, QFrame, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QToolButton, QStackedWidget
 from PySide6.QtCore import Signal, QFileInfo, QEvent, Qt
 from PySide6.QtGui import QIcon, QAction
 
 from teshi.utils.bdd_converter import BDDConverter
+from teshi.views.widgets.bdd_view import BDDViewWidget
 
 
 class EditorWidget(QWidget):
@@ -48,11 +49,20 @@ class EditorWidget(QWidget):
         toolbar_widget.setMaximumHeight(30)
         layout.addWidget(toolbar_widget)
         
-        # Create text editor
+        # Create stacked widget for switching between text editor and BDD view
+        self.stacked_widget = QStackedWidget()
+        
+        # Text editor (raw content)
         self.text_edit = QTextEdit()
         self.text_edit.setFrameShape(QFrame.NoFrame)
         self.text_edit.setLineWidth(0)
-        layout.addWidget(self.text_edit)
+        self.stacked_widget.addWidget(self.text_edit)
+        
+        # BDD view widget
+        self.bdd_view = BDDViewWidget()
+        self.stacked_widget.addWidget(self.bdd_view)
+        
+        layout.addWidget(self.stacked_widget)
     
     @property
     def dirty(self) -> bool:
@@ -65,8 +75,7 @@ class EditorWidget(QWidget):
         """Toggle between standard and BDD format"""
         if self._is_bdd_mode:
             # Switch back to standard format
-            if self._original_content:
-                self.text_edit.setPlainText(self._original_content)
+            self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
             self.bdd_button.setChecked(False)
@@ -75,7 +84,8 @@ class EditorWidget(QWidget):
             self._original_content = self.text_edit.toPlainText()
             try:
                 bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)
-                self.text_edit.setPlainText(bdd_content)
+                self.bdd_view.set_bdd_content(bdd_content)
+                self.stacked_widget.setCurrentWidget(self.bdd_view)
                 self._is_bdd_mode = True
                 self.bdd_button.setText("Raw")
                 self.bdd_button.setChecked(True)

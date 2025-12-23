@@ -105,10 +105,24 @@ class BDDConverter:
             # Add content to current section
             if current_section and line:
                 if current_section in ['preconditions', 'steps', 'expected_results']:
-                    # Remove numbered list prefix if present (support both Chinese and Western numbering)
-                    clean_line = re.sub(r'^\d+[、.]\s*', '', line)
-                    if clean_line:
-                        test_case[current_section].append(clean_line)
+                    # Extract and preserve numbered list prefix
+                    match = re.match(r'^(\d+[、.]\s*)(.*)', line)
+                    if match:
+                        number_prefix = match.group(1)
+                        content = match.group(2).strip()
+                        # Store both the original line with number and the clean content
+                        test_case[current_section].append({
+                            'original': line.strip(),
+                            'content': content,
+                            'number': number_prefix
+                        })
+                    else:
+                        # Handle lines without numbers
+                        test_case[current_section].append({
+                            'original': line.strip(),
+                            'content': line.strip(),
+                            'number': ''
+                        })
                 elif current_section == 'notes':
                     test_case['notes'] += line + ' '
         
@@ -139,10 +153,18 @@ class BDDConverter:
         # Add preconditions as Given statements
         if test_case['preconditions']:
             for i, precondition in enumerate(test_case['preconditions']):
-                if i == 0:
-                    bdd += f"    Given {precondition}\n"
+                if isinstance(precondition, dict):
+                    content = precondition['content']
+                    number = precondition['number']
                 else:
-                    bdd += f"    And {precondition}\n"
+                    # Handle legacy format
+                    content = precondition
+                    number = f"{i+1}. "
+                
+                if i == 0:
+                    bdd += f"    Given {number}{content}\n"
+                else:
+                    bdd += f"    And {number}{content}\n"
         
         # Add operation steps and expected results in corresponding order
         if test_case['steps'] or test_case['expected_results']:
@@ -157,20 +179,36 @@ class BDDConverter:
                 # Add step with When/And
                 if i < steps_count:
                     step = test_case['steps'][i]
+                    if isinstance(step, dict):
+                        content = step['content']
+                        number = step['number']
+                    else:
+                        # Handle legacy format
+                        content = step
+                        number = f"{i+1}. "
+                    
                     if not first_step_added:
-                        bdd += f"    When {step}\n"
+                        bdd += f"    When {number}{content}\n"
                         first_step_added = True
                     else:
-                        bdd += f"    When {step}\n"
+                        bdd += f"    When {number}{content}\n"
                 
                 # Add corresponding expected result with Then/And
                 if i < results_count:
                     result = test_case['expected_results'][i]
+                    if isinstance(result, dict):
+                        content = result['content']
+                        number = result['number']
+                    else:
+                        # Handle legacy format
+                        content = result
+                        number = f"{i+1}. "
+                    
                     if not first_result_added:
-                        bdd += f"    Then {result}\n"
+                        bdd += f"    Then {number}{content}\n"
                         first_result_added = True
                     else:
-                        bdd += f"    Then {result}\n"
+                        bdd += f"    Then {number}{content}\n"
         
         # Add notes as comments if present
         if test_case['notes']:
