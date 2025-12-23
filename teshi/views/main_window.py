@@ -12,6 +12,7 @@ from teshi.views.widgets.editor_widget import EditorWidget
 from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog
 from teshi.utils.workspace_manager import WorkspaceManager
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
+from teshi.utils.resource_path import resource_path
 
 
 class MainWindow(QMainWindow):
@@ -23,7 +24,7 @@ class MainWindow(QMainWindow):
         self.project_name = project_name
         self.project_path = project_path
         self.setWindowTitle(f"{project_name} - Teshi - {project_path}")
-        self.setWindowIcon(QIcon("assets/teshi_icon64.png"))
+        self.setWindowIcon(QIcon(resource_path("assets/teshi_icon64.png")))
         self.setGeometry(100, 100, 1200, 800)
         
         # Global BDD mode state
@@ -175,7 +176,7 @@ class MainWindow(QMainWindow):
         left_toolbar.setStyleSheet("padding: 5")
         self.addToolBar(Qt.LeftToolBarArea, left_toolbar)
 
-        action_project = left_toolbar.addAction(QIcon("assets/icons/project.png"), "Project")
+        action_project = left_toolbar.addAction(QIcon(resource_path("assets/icons/project.png")), "Project")
         action_project.triggered.connect(lambda: self.toggle_dock(self.project_dock))
         self.project_dock = QDockWidget("Project", self)
         self.explorer = ProjectExplorer(    self.project_path)
@@ -195,7 +196,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.RightToolBarArea, right_toolbar)
 
         # Add BDD Mind Map dock to right toolbar
-        action_bdd = right_toolbar.addAction(QIcon("assets/icons/testcase_blue.png"), "BDD Mind Map")
+        action_bdd = right_toolbar.addAction(QIcon(resource_path("assets/icons/testcase_blue.png")), "BDD Mind Map")
         action_bdd.triggered.connect(lambda: self.toggle_dock(self.bdd_mind_map_dock))
         self.bdd_mind_map_dock = QDockWidget("BDD Mind Map", self)
         self.bdd_mind_map = BDDMindMapDock(self.project_path)

@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLa
 from PySide6.QtGui import QFont, QIcon
 from PySide6.QtCore import Qt
 from teshi.utils.project_manager import ProjectManager
+from teshi.utils.resource_path import resource_path
 
 
 # Class for the project selection page UI
@@ -19,7 +20,7 @@ class ProjectSelectPage(QWidget):
 
         # Set window margins and icon
         self.setContentsMargins(0,0,0,0)
-        self.setWindowIcon(QIcon("assets/teshi_icon64.png"))
+        self.setWindowIcon(QIcon(resource_path("assets/teshi_icon64.png")))
 
         # Initialize main layout with horizontal alignment
         main_layout = QHBoxLayout()
@@ -39,7 +40,7 @@ class ProjectSelectPage(QWidget):
 
         # Icon label for the application logo
         icon_label = QLabel()
-        icon_label.setPixmap(QIcon("assets/teshi_icon48.png").pixmap(48, 48))
+        icon_label.setPixmap(QIcon(resource_path("assets/teshi_icon48.png")).pixmap(48, 48))
         icon_label.setFixedSize(48, 48)
         top_left_logo_layout.addWidget(icon_label, 0, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 

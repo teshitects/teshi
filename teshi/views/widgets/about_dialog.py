@@ -1,13 +1,14 @@
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QDialog, QHBoxLayout
 from PySide6.QtCore import Qt
+from teshi.utils.resource_path import resource_path
 
 
 class AboutDialog(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("About Teshi")
-        self.setWindowIcon(QIcon("assets/teshi_icon64.png"))
+        self.setWindowIcon(QIcon(resource_path("assets/teshi_icon64.png")))
         self.setFixedSize(500, 350)
 
         self.setStyleSheet("background-color: #2b2b2b; color: white;")

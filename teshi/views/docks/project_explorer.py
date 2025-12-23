@@ -8,6 +8,7 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
 from PySide6.QtCore import Qt, Signal, QModelIndex
 import platform
 import subprocess
+from teshi.utils.resource_path import resource_path
 
 
 class ProjectExplorer(QTreeView):
@@ -24,11 +25,11 @@ class ProjectExplorer(QTreeView):
         # Root node (project name)
         root_item = QStandardItem(os.path.basename(target_dir))
         root_item.setEditable(False)
-        root_item.setIcon(QIcon("assets/icons/folder.png"))
+        root_item.setIcon(QIcon(resource_path("assets/icons/folder.png")))
         root_item.setData(target_dir, Qt.UserRole)  # store real path
-        self.folder_icon = QIcon("assets/icons/folder.png")
-        self.file_icon = QIcon("assets/icons/testcase_normal.png")
-        self.unknown_file_icon = QIcon("assets/icons/unknown_file.png") 
+        self.folder_icon = QIcon(resource_path("assets/icons/folder.png"))
+        self.file_icon = QIcon(resource_path("assets/icons/testcase_normal.png"))
+        self.unknown_file_icon = QIcon(resource_path("assets/icons/unknown_file.png")) 
         
         self.model = QStandardItemModel()
         self.model.appendRow(root_item)
@@ -104,7 +105,7 @@ class ProjectExplorer(QTreeView):
         if ok and text:
             new_item = QStandardItem(text)
             new_item.setEditable(False)
-            new_item.setIcon(QIcon("assets/icons/folder.png"))
+            new_item.setIcon(QIcon(resource_path("assets/icons/folder.png")))
             parent_item.appendRow(new_item)
 
             parent_path = self.get_item_path(parent_item)
@@ -119,7 +120,7 @@ class ProjectExplorer(QTreeView):
             filename = f"{text}.md"
             new_item = QStandardItem(filename)
             new_item.setEditable(False)
-            new_item.setIcon(QIcon("assets/icons/testcase_normal.png"))
+            new_item.setIcon(QIcon(resource_path("assets/icons/testcase_normal.png")))
             parent_item.appendRow(new_item)
 
             parent_path = self.get_item_path(parent_item)
