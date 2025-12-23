@@ -7,6 +7,7 @@ from PySide6.QtGui import QAction, QIcon, QCloseEvent
 
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
+from teshi.views.docks.bdd_mind_map import BDDMindMapDock
 from teshi.views.widgets.editor_widget import EditorWidget
 from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog
 from teshi.utils.workspace_manager import WorkspaceManager
@@ -157,17 +158,18 @@ class MainWindow(QMainWindow):
 
         main_layout = QHBoxLayout(main_widget)
 
-        toolbar = QToolBar("LeftToolbar", self)
-        toolbar.setOrientation(Qt.Vertical)
-        toolbar.setMovable(False)
-        toolbar.setFloatable(False)
-        toolbar.setFixedWidth(60)
-        toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
-        toolbar.setIconSize(QSize(20, 20))
-        toolbar.setStyleSheet("padding: 5")
-        self.addToolBar(Qt.LeftToolBarArea, toolbar)
+        # Left Toolbar
+        left_toolbar = QToolBar("LeftToolbar", self)
+        left_toolbar.setOrientation(Qt.Vertical)
+        left_toolbar.setMovable(False)
+        left_toolbar.setFloatable(False)
+        left_toolbar.setFixedWidth(60)
+        left_toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        left_toolbar.setIconSize(QSize(20, 20))
+        left_toolbar.setStyleSheet("padding: 5")
+        self.addToolBar(Qt.LeftToolBarArea, left_toolbar)
 
-        action_project = toolbar.addAction(QIcon("assets/icons/project.png"), "Project")
+        action_project = left_toolbar.addAction(QIcon("assets/icons/project.png"), "Project")
         action_project.triggered.connect(lambda: self.toggle_dock(self.project_dock))
         self.project_dock = QDockWidget("Project", self)
         self.explorer = ProjectExplorer(    self.project_path)
@@ -175,16 +177,36 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
 
-        # Add global BDD mode button to toolbar
+        # Add global BDD mode button to left toolbar
         self.global_bdd_button = QToolButton()
         self.global_bdd_button.setText("BDD")
         self.global_bdd_button.setCheckable(True)
         self.global_bdd_button.setToolTip("Toggle Global BDD Mode")
         self.global_bdd_button.clicked.connect(self._toggle_global_bdd_mode)
         
-        # Add a separator and BDD button to toolbar
-        toolbar.addSeparator()
-        toolbar.addWidget(self.global_bdd_button)
+        # Add a separator and BDD button to left toolbar
+        left_toolbar.addSeparator()
+        left_toolbar.addWidget(self.global_bdd_button)
+
+        # Right Toolbar
+        right_toolbar = QToolBar("RightToolbar", self)
+        right_toolbar.setOrientation(Qt.Vertical)
+        right_toolbar.setMovable(False)
+        right_toolbar.setFloatable(False)
+        right_toolbar.setFixedWidth(60)
+        right_toolbar.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        right_toolbar.setIconSize(QSize(20, 20))
+        right_toolbar.setStyleSheet("padding: 5")
+        self.addToolBar(Qt.RightToolBarArea, right_toolbar)
+
+        # Add BDD Mind Map dock to right toolbar
+        action_bdd = right_toolbar.addAction(QIcon("assets/icons/testcase_blue.png"), "BDD Mind Map")
+        action_bdd.triggered.connect(lambda: self.toggle_dock(self.bdd_mind_map_dock))
+        self.bdd_mind_map_dock = QDockWidget("BDD Mind Map", self)
+        self.bdd_mind_map = BDDMindMapDock(self.project_path)
+        self.bdd_mind_map_dock.setWidget(self.bdd_mind_map)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.bdd_mind_map_dock)
+        self.bdd_mind_map_dock.hide()
 
         # central tab widget
         self.tabs = QTabWidget()
