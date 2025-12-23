@@ -13,6 +13,7 @@ class EditorWidget(QWidget):
         super().__init__(parent)
         self.filePath = file_path
         self._is_bdd_mode = False
+        self._global_bdd_mode = False
         self._original_content = ""
         
         # Initialize BDD converter
@@ -79,6 +80,16 @@ class EditorWidget(QWidget):
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
             self.bdd_button.setChecked(False)
+            
+            # If global BDD mode is enabled, disable it
+            if self._global_bdd_mode:
+                # Find main window and disable global mode
+                main_window = self.parent()
+                while main_window and not hasattr(main_window, 'global_bdd_mode_changed'):
+                    main_window = main_window.parent()
+                
+                if main_window and hasattr(main_window, '_toggle_global_bdd_mode'):
+                    main_window._toggle_global_bdd_mode()
         else:
             # Switch to BDD format
             self._original_content = self.text_edit.toPlainText()
@@ -89,9 +100,43 @@ class EditorWidget(QWidget):
                 self._is_bdd_mode = True
                 self.bdd_button.setText("Raw")
                 self.bdd_button.setChecked(True)
+                
+                # If this is the first local BDD activation, trigger global mode
+                if not self._global_bdd_mode:
+                    # Signal to main window to enable global BDD mode
+                    main_window = self.parent()
+                    while main_window and not hasattr(main_window, 'global_bdd_mode_changed'):
+                        main_window = main_window.parent()
+                    
+                    if main_window and hasattr(main_window, '_toggle_global_bdd_mode'):
+                        main_window._toggle_global_bdd_mode()
+                
             except Exception as e:
                 QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
                 self.bdd_button.setChecked(False)
+    
+    def set_global_bdd_mode(self, enabled: bool):
+        """Set global BDD mode state"""
+        self._global_bdd_mode = enabled
+        
+        if enabled and not self._is_bdd_mode:
+            # Enable BDD mode for this editor
+            self._original_content = self.text_edit.toPlainText()
+            try:
+                bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)
+                self.bdd_view.set_bdd_content(bdd_content)
+                self.stacked_widget.setCurrentWidget(self.bdd_view)
+                self._is_bdd_mode = True
+                self.bdd_button.setText("Raw")
+                self.bdd_button.setChecked(True)
+            except Exception as e:
+                QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
+        elif not enabled and self._is_bdd_mode:
+            # Disable BDD mode for this editor
+            self.stacked_widget.setCurrentWidget(self.text_edit)
+            self._is_bdd_mode = False
+            self.bdd_button.setText("BDD")
+            self.bdd_button.setChecked(False)
     
     def toPlainText(self) -> str:
         """Get plain text from the editor"""

@@ -1,8 +1,8 @@
 import os
 
 from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QSplitter, QMenuBar, QMenu, \
-    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar, QMessageBox
-from PySide6.QtCore import Qt, QSize, QTimer, QFileInfo
+    QFrame, QPushButton, QDockWidget, QTextEdit, QToolBar, QTabWidget, QStatusBar, QProgressBar, QMessageBox, QToolButton
+from PySide6.QtCore import Qt, QSize, QTimer, QFileInfo, Signal
 from PySide6.QtGui import QAction, QIcon, QCloseEvent
 
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
@@ -14,6 +14,9 @@ from teshi.utils.testcase_index_manager import TestCaseIndexManager
 
 
 class MainWindow(QMainWindow):
+    # Signal for global BDD mode changes
+    global_bdd_mode_changed = Signal(bool)
+    
     def __init__(self, project_name, project_path):
         super().__init__()
         self.project_name = project_name
@@ -21,6 +24,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{project_name} - Teshi - {project_path}")
         self.setWindowIcon(QIcon("assets/teshi_icon64.png"))
         self.setGeometry(100, 100, 1200, 800)
+        
+        # Global BDD mode state
+        self._global_bdd_mode = False
         
         # Initialize workspace manager
         self.workspace_manager = WorkspaceManager(project_path, self)
@@ -169,6 +175,17 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
 
+        # Add global BDD mode button to toolbar
+        self.global_bdd_button = QToolButton()
+        self.global_bdd_button.setText("BDD")
+        self.global_bdd_button.setCheckable(True)
+        self.global_bdd_button.setToolTip("Toggle Global BDD Mode")
+        self.global_bdd_button.clicked.connect(self._toggle_global_bdd_mode)
+        
+        # Add a separator and BDD button to toolbar
+        toolbar.addSeparator()
+        toolbar.addWidget(self.global_bdd_button)
+
         # central tab widget
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
@@ -258,6 +275,12 @@ class MainWindow(QMainWindow):
         editor.modifiedChanged.connect(
             lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
         )
+        
+        # Connect to global BDD mode changes
+        self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
+        
+        # Apply current global BDD mode state
+        editor.set_global_bdd_mode(self._global_bdd_mode)
 
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
@@ -281,6 +304,30 @@ class MainWindow(QMainWindow):
             dock.show()
         # Trigger workspace save
         self.workspace_manager.trigger_save()
+    
+    def _toggle_global_bdd_mode(self):
+        """Toggle global BDD mode for all tabs"""
+        self._global_bdd_mode = not self._global_bdd_mode
+        
+        # Update button state
+        self.global_bdd_button.setChecked(self._global_bdd_mode)
+        
+        # Emit signal to all editors
+        self.global_bdd_mode_changed.emit(self._global_bdd_mode)
+        
+        # Apply BDD mode to all existing editor tabs
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.set_global_bdd_mode(self._global_bdd_mode)
+        
+        # Show message
+        mode_text = "enabled" if self._global_bdd_mode else "disabled"
+        self.show_message(f"Global BDD mode {mode_text}", 2000)
+    
+    def get_global_bdd_mode(self) -> bool:
+        """Get current global BDD mode state"""
+        return self._global_bdd_mode
     
     def closeEvent(self, event: QCloseEvent):
         """Window close event, save workspace state"""
