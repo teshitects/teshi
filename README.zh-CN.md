@@ -1,9 +1,14 @@
-
-# Teshi
+<p align="center">
+<img src="teshi/assets/teshi_icon48.png" width="48"/>
+</p>
 
 <div align="center">
 
+## Teshi
 **一款专为测试人员打造的 IDE 工具**
+</div>
+
+<div align="center">
 
 [English](README.md) | 中文文档
 
