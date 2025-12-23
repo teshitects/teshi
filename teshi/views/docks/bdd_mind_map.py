@@ -133,7 +133,7 @@ class BDDMindMapView(QGraphicsView):
         zoom_out_factor = 1 / zoom_in_factor
 
         # Save original scene position
-        old_pos = self.mapToScene(event.pos())
+        old_pos = self.mapToScene(event.position().toPoint())
 
         # Zoom
         if event.angleDelta().y() > 0:
@@ -146,7 +146,7 @@ class BDDMindMapView(QGraphicsView):
             self._scale_factor *= zoom_factor
 
         # Get new position
-        new_pos = self.mapToScene(event.pos())
+        new_pos = self.mapToScene(event.position().toPoint())
 
         # Adjust scene position
         delta = new_pos - old_pos
