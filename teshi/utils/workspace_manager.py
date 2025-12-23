@@ -280,8 +280,11 @@ class WorkspaceManager(QObject):
                     QTimer.singleShot(10, open_next_tab)
                 else:
                     # All tabs restored, now restore current tab index
+                    # Temporarily block signals to avoid triggering tab change events
+                    main_window.tabs.blockSignals(True)
                     if current_tab_index >= 0 and current_tab_index < main_window.tabs.count():
                         main_window.tabs.setCurrentIndex(current_tab_index)
+                    main_window.tabs.blockSignals(False)
                     
                     # Apply BDD mode to all restored tabs (with deferred conversion)
                     if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
@@ -292,8 +295,14 @@ class WorkspaceManager(QObject):
                                 defer = (i != current_tab_index)
                                 widget.set_global_bdd_mode(bdd_mode, defer_conversion=defer)
                     
-                    # Re-enable updates and trigger final update
+                    # Re-enable updates
                     main_window._suppress_updates = False
+                    
+                    # Manually trigger the current tab's pending conversion and mind map update
+                    current_widget = main_window.tabs.currentWidget()
+                    if current_widget and hasattr(current_widget, 'activate_if_pending'):
+                        current_widget.activate_if_pending()
+                    
                     # Update mind map once for the current tab
                     if hasattr(main_window, '_update_mind_map_for_current_file'):
                         main_window._update_mind_map_for_current_file()

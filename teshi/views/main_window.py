@@ -287,7 +287,9 @@ class MainWindow(QMainWindow):
         # check if already open
         for i in range(self.tabs.count()):
             if self.tabs.tabToolTip(i) == path:
-                self.tabs.setCurrentIndex(i)
+                # Only switch to the tab if not suppressing updates
+                if not suppress_updates and not self._suppress_updates:
+                    self.tabs.setCurrentIndex(i)
                 return
 
         editor = EditorWidget(path)
@@ -303,12 +305,18 @@ class MainWindow(QMainWindow):
         # Connect to global BDD mode changes
         self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
         
-        # Apply current global BDD mode state
-        editor.set_global_bdd_mode(self._global_bdd_mode)
+        # Apply current global BDD mode state (with deferred conversion if suppressing updates)
+        if suppress_updates or self._suppress_updates:
+            editor.set_global_bdd_mode(self._global_bdd_mode, defer_conversion=True)
+        else:
+            editor.set_global_bdd_mode(self._global_bdd_mode)
 
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
-        self.tabs.setCurrentWidget(editor)
+        
+        # Only set as current widget if not suppressing updates
+        if not suppress_updates and not self._suppress_updates:
+            self.tabs.setCurrentWidget(editor)
         
         # Update mind map for newly opened file (only if not suppressed)
         if not suppress_updates and not self._suppress_updates:
