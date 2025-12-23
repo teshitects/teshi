@@ -1,26 +1,21 @@
-[project]
+[tool.poetry]
 name = "teshi"
 version = "0.1.0"
 description = "Teshi is a program built for testers"
-authors = [
-    {name = "lilinfang",email = "lilinfangrelax@gmail.com"}
-]
-license = {text = "Apache-2.0"}
+authors = ["lilinfang <lilinfangrelax@gmail.com>"]
+license = "Apache-2.0"
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
-dependencies = [
-    "pyside6 (>=6.10.0,<7.0.0)",
-    "pytest (>=8.4.2,<9.0.0)",
-    "xlrd (>=2.0.2,<3.0.0)",
-    "markdown (>=3.10,<4.0)"
-]
 
-[project.optional-dependencies]
-build = [
-    "pyinstaller (>=6.0.0,<7.0.0)",
-    "pillow (>=10.0.0,<11.0.0)"
-]
+[tool.poetry.dependencies]
+python = ">=3.13,<3.14"
+pyside6 = ">=6.10.0,<7.0.0"
+pytest = ">=8.4.2,<9.0.0"
+xlrd = ">=2.0.2,<3.0.0"
+markdown = ">=3.10,<4.0"
 
+[tool.poetry.group.build.dependencies]
+pyinstaller = ">=6.0.0,<7.0.0"
+pillow = ">=10.0.0,<11.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
