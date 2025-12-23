@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
                 return
 
         editor = EditorWidget(path)
-        self.highlighter = MarkdownHighlighter(editor.document())
+        self.highlighter = MarkdownHighlighter(editor.text_edit.document())
 
         editor.modifiedChanged.connect(
             lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
