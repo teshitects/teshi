@@ -15,6 +15,7 @@ class EditorWidget(QWidget):
         self._is_bdd_mode = False
         self._global_bdd_mode = False
         self._original_content = ""
+        self._pending_bdd_conversion = False  # Flag for deferred BDD conversion
         
         # Initialize BDD converter
         self.bdd_converter = BDDConverter()
@@ -78,6 +79,7 @@ class EditorWidget(QWidget):
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
+            self._pending_bdd_conversion = False
             
             # If global BDD mode is enabled, disable it
             if self._global_bdd_mode:
@@ -90,47 +92,63 @@ class EditorWidget(QWidget):
                     main_window._toggle_global_bdd_mode()
         else:
             # Switch to BDD format
-            self._original_content = self.text_edit.toPlainText()
-            try:
-                bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)
-                self.bdd_view.set_bdd_content(bdd_content)
-                self.stacked_widget.setCurrentWidget(self.bdd_view)
-                self._is_bdd_mode = True
-                self.bdd_button.setText("Raw")
+            self._apply_bdd_mode()
+            
+            # If this is the first local BDD activation, trigger global mode
+            if not self._global_bdd_mode:
+                # Signal to main window to enable global BDD mode
+                main_window = self.parent()
+                while main_window and not hasattr(main_window, 'global_bdd_mode_changed'):
+                    main_window = main_window.parent()
                 
-                # If this is the first local BDD activation, trigger global mode
-                if not self._global_bdd_mode:
-                    # Signal to main window to enable global BDD mode
-                    main_window = self.parent()
-                    while main_window and not hasattr(main_window, 'global_bdd_mode_changed'):
-                        main_window = main_window.parent()
-                    
-                    if main_window and hasattr(main_window, '_toggle_global_bdd_mode'):
-                        main_window._toggle_global_bdd_mode()
-                
-            except Exception as e:
-                QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
+                if main_window and hasattr(main_window, '_toggle_global_bdd_mode'):
+                    main_window._toggle_global_bdd_mode()
     
-    def set_global_bdd_mode(self, enabled: bool):
-        """Set global BDD mode state"""
+    def set_global_bdd_mode(self, enabled: bool, defer_conversion: bool = False):
+        """Set global BDD mode state
+        
+        Args:
+            enabled: Whether to enable BDD mode
+            defer_conversion: If True, defer actual conversion until the tab is activated
+        """
         self._global_bdd_mode = enabled
         
         if enabled and not self._is_bdd_mode:
-            # Enable BDD mode for this editor
-            self._original_content = self.text_edit.toPlainText()
-            try:
-                bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)
-                self.bdd_view.set_bdd_content(bdd_content)
-                self.stacked_widget.setCurrentWidget(self.bdd_view)
-                self._is_bdd_mode = True
-                self.bdd_button.setText("Raw")
-            except Exception as e:
-                QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
+            if defer_conversion:
+                # Just mark that BDD mode should be enabled, don't convert yet
+                # Conversion will happen when the tab becomes active
+                self._pending_bdd_conversion = True
+            else:
+                # Enable BDD mode for this editor immediately
+                self._apply_bdd_mode()
         elif not enabled and self._is_bdd_mode:
             # Disable BDD mode for this editor
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
             self.bdd_button.setText("BDD")
+            self._pending_bdd_conversion = False
+    
+    def _apply_bdd_mode(self):
+        """Actually apply BDD mode conversion"""
+        if self._is_bdd_mode:
+            return  # Already in BDD mode
+        
+        self._original_content = self.text_edit.toPlainText()
+        try:
+            bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)
+            self.bdd_view.set_bdd_content(bdd_content)
+            self.stacked_widget.setCurrentWidget(self.bdd_view)
+            self._is_bdd_mode = True
+            self.bdd_button.setText("Raw")
+            self._pending_bdd_conversion = False
+        except Exception as e:
+            QMessageBox.warning(self, "Conversion Error", f"Failed to convert to BDD format:\n{e}")
+            self._pending_bdd_conversion = False
+    
+    def activate_if_pending(self):
+        """Activate pending BDD conversion if any"""
+        if hasattr(self, '_pending_bdd_conversion') and self._pending_bdd_conversion:
+            self._apply_bdd_mode()
     
     def toPlainText(self) -> str:
         """Get plain text from the editor"""

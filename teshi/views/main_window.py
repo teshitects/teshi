@@ -328,13 +328,22 @@ class MainWindow(QMainWindow):
     
     def _on_tab_changed(self, index: int):
         """Handle tab change event"""
-        # Update mind map immediately when switching tabs
-        self._do_update_mind_map()
-        # Trigger workspace save
-        self.workspace_manager.trigger_save()
+        # Activate pending BDD conversion if any
+        current_widget = self.tabs.widget(index)
+        if isinstance(current_widget, EditorWidget) and hasattr(current_widget, 'activate_if_pending'):
+            current_widget.activate_if_pending()
+        
+        # Update mind map immediately when switching tabs (unless suppressed)
+        if not self._suppress_updates:
+            self._do_update_mind_map()
+            # Trigger workspace save
+            self.workspace_manager.trigger_save()
     
     def _schedule_mind_map_update(self):
         """Schedule a mind map update (with debouncing)"""
+        # Skip if updates are suppressed
+        if self._suppress_updates:
+            return
         # Restart the timer - this effectively debounces rapid text changes
         self._mind_map_update_timer.stop()
         self._mind_map_update_timer.start()

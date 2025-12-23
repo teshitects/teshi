@@ -283,12 +283,14 @@ class WorkspaceManager(QObject):
                     if current_tab_index >= 0 and current_tab_index < main_window.tabs.count():
                         main_window.tabs.setCurrentIndex(current_tab_index)
                     
-                    # Apply BDD mode to all restored tabs
+                    # Apply BDD mode to all restored tabs (with deferred conversion)
                     if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
                         for i in range(main_window.tabs.count()):
                             widget = main_window.tabs.widget(i)
                             if hasattr(widget, 'set_global_bdd_mode'):
-                                widget.set_global_bdd_mode(bdd_mode)
+                                # Use defer_conversion=True for non-current tabs
+                                defer = (i != current_tab_index)
+                                widget.set_global_bdd_mode(bdd_mode, defer_conversion=defer)
                     
                     # Re-enable updates and trigger final update
                     main_window._suppress_updates = False
