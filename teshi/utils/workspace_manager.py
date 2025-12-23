@@ -58,7 +58,10 @@ class WorkspaceManager(QObject):
         print(f"DEBUG: main_window has project_dock: {hasattr(main_window, 'project_dock')}")
         print(f"DEBUG: main_window has explorer: {hasattr(main_window, 'explorer')}")
         if hasattr(main_window, 'project_dock'):
-            workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
+            workspace_data['dock_states']['project'] = {
+                'visible': main_window.project_dock.isVisible(),
+                'width': main_window.project_dock.width()
+            }
             
             # Save project explorer expanded state
             if hasattr(main_window, 'explorer'):
@@ -72,6 +75,17 @@ class WorkspaceManager(QObject):
                 print(f"DEBUG: main_window does NOT have explorer attribute!")
         else:
             print(f"DEBUG: main_window does NOT have project_dock attribute!")
+        
+        # Save BDD Mind Map dock state
+        if hasattr(main_window, 'bdd_mind_map_dock'):
+            workspace_data['dock_states']['bdd_mind_map'] = {
+                'visible': main_window.bdd_mind_map_dock.isVisible(),
+                'width': main_window.bdd_mind_map_dock.width()
+            }
+        
+        # Save global BDD mode
+        if hasattr(main_window, '_global_bdd_mode'):
+            workspace_data['bdd_mode'] = main_window._global_bdd_mode
         
         return workspace_data
     
@@ -106,7 +120,10 @@ class WorkspaceManager(QObject):
             # Simple dock state
             if hasattr(main_window, 'project_dock'):
                 try:
-                    workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
+                    workspace_data['dock_states']['project'] = {
+                        'visible': main_window.project_dock.isVisible(),
+                        'width': main_window.project_dock.width()
+                    }
                     
                     # Save project explorer expanded state
                     if hasattr(main_window, 'explorer'):
@@ -114,6 +131,23 @@ class WorkspaceManager(QObject):
                         workspace_data['project_explorer'] = {
                             'expanded_folders': expanded_folders
                         }
+                except:
+                    pass
+            
+            # Save BDD Mind Map dock state
+            if hasattr(main_window, 'bdd_mind_map_dock'):
+                try:
+                    workspace_data['dock_states']['bdd_mind_map'] = {
+                        'visible': main_window.bdd_mind_map_dock.isVisible(),
+                        'width': main_window.bdd_mind_map_dock.width()
+                    }
+                except:
+                    pass
+            
+            # Save global BDD mode
+            if hasattr(main_window, '_global_bdd_mode'):
+                try:
+                    workspace_data['bdd_mode'] = main_window._global_bdd_mode
                 except:
                     pass
             
@@ -165,11 +199,46 @@ class WorkspaceManager(QObject):
         
         # Restore dock widget states
         dock_states = workspace_data.get('dock_states', {})
+        
+        # Restore project dock
         if hasattr(main_window, 'project_dock') and 'project' in dock_states:
-            if dock_states['project']:
-                main_window.project_dock.show()
+            project_state = dock_states['project']
+            # Handle both old format (boolean) and new format (dict)
+            if isinstance(project_state, bool):
+                if project_state:
+                    main_window.project_dock.show()
+                else:
+                    main_window.project_dock.hide()
             else:
-                main_window.project_dock.hide()
+                # New format with width
+                if project_state.get('visible', False):
+                    main_window.project_dock.show()
+                else:
+                    main_window.project_dock.hide()
+                
+                # Restore width (use resize instead of setFixedWidth to allow user adjustment)
+                width = project_state.get('width')
+                if width and width > 0:
+                    main_window.project_dock.resize(width, main_window.project_dock.height())
+        
+        # Restore BDD Mind Map dock
+        if hasattr(main_window, 'bdd_mind_map_dock') and 'bdd_mind_map' in dock_states:
+            bdd_state = dock_states['bdd_mind_map']
+            if bdd_state.get('visible', False):
+                main_window.bdd_mind_map_dock.show()
+            else:
+                main_window.bdd_mind_map_dock.hide()
+            
+            # Restore width (use resize instead of setFixedWidth to allow user adjustment)
+            width = bdd_state.get('width')
+            if width and width > 0:
+                main_window.bdd_mind_map_dock.resize(width, main_window.bdd_mind_map_dock.height())
+        
+        # Restore BDD mode
+        bdd_mode = workspace_data.get('bdd_mode', False)
+        if bdd_mode and hasattr(main_window, '_global_bdd_mode'):
+            main_window._global_bdd_mode = bdd_mode
+            # Apply to all tabs will be done after tabs are restored
         
         # Restore project explorer state
         project_explorer = workspace_data.get('project_explorer', {})
@@ -190,6 +259,15 @@ class WorkspaceManager(QObject):
         current_tab_index = workspace_data.get('current_tab_index', -1)
         if current_tab_index >= 0 and current_tab_index < main_window.tabs.count():
             main_window.tabs.setCurrentIndex(current_tab_index)
+        
+        # Apply BDD mode to all restored tabs
+        bdd_mode = workspace_data.get('bdd_mode', False)
+        if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
+            # Apply BDD mode to all tabs
+            for i in range(main_window.tabs.count()):
+                widget = main_window.tabs.widget(i)
+                if hasattr(widget, 'set_global_bdd_mode'):
+                    widget.set_global_bdd_mode(bdd_mode)
     
     def clear_workspace(self):
         """Clear workspace state"""
