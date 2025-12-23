@@ -256,26 +256,51 @@ class WorkspaceManager(QObject):
             from PySide6.QtCore import QTimer
             QTimer.singleShot(300, lambda: main_window.explorer.set_expanded_state(expanded_folders))
         
-        # Restore open tabs
+        # Restore open tabs asynchronously to avoid blocking
         open_tabs = workspace_data.get('open_tabs', [])
-        for tab_data in open_tabs:
-            file_path = tab_data.get('file_path')
-            if file_path and os.path.exists(file_path):
-                main_window.open_file_in_tab(file_path)
-        
-        # Restore current tab
         current_tab_index = workspace_data.get('current_tab_index', -1)
-        if current_tab_index >= 0 and current_tab_index < main_window.tabs.count():
-            main_window.tabs.setCurrentIndex(current_tab_index)
-        
-        # Apply BDD mode to all restored tabs
         bdd_mode = workspace_data.get('bdd_mode', False)
-        if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
-            # Apply BDD mode to all tabs
-            for i in range(main_window.tabs.count()):
-                widget = main_window.tabs.widget(i)
-                if hasattr(widget, 'set_global_bdd_mode'):
-                    widget.set_global_bdd_mode(bdd_mode)
+        
+        def restore_tabs():
+            """Restore tabs one by one with delays to avoid UI freezing"""
+            # Enable suppress mode to avoid triggering updates during bulk restore
+            main_window._suppress_updates = True
+            
+            tab_index = 0
+            
+            def open_next_tab():
+                nonlocal tab_index
+                if tab_index < len(open_tabs):
+                    tab_data = open_tabs[tab_index]
+                    file_path = tab_data.get('file_path')
+                    if file_path and os.path.exists(file_path):
+                        main_window.open_file_in_tab(file_path, suppress_updates=True)
+                    tab_index += 1
+                    # Schedule next tab with minimal delay (10ms)
+                    QTimer.singleShot(10, open_next_tab)
+                else:
+                    # All tabs restored, now restore current tab index
+                    if current_tab_index >= 0 and current_tab_index < main_window.tabs.count():
+                        main_window.tabs.setCurrentIndex(current_tab_index)
+                    
+                    # Apply BDD mode to all restored tabs
+                    if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
+                        for i in range(main_window.tabs.count()):
+                            widget = main_window.tabs.widget(i)
+                            if hasattr(widget, 'set_global_bdd_mode'):
+                                widget.set_global_bdd_mode(bdd_mode)
+                    
+                    # Re-enable updates and trigger final update
+                    main_window._suppress_updates = False
+                    # Update mind map once for the current tab
+                    if hasattr(main_window, '_update_mind_map_for_current_file'):
+                        main_window._update_mind_map_for_current_file()
+            
+            # Start opening tabs
+            open_next_tab()
+        
+        # Delay tab restoration to allow window to show first
+        QTimer.singleShot(50, restore_tabs)
     
     def clear_workspace(self):
         """Clear workspace state"""

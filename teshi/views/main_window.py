@@ -30,6 +30,9 @@ class MainWindow(QMainWindow):
         # Global BDD mode state
         self._global_bdd_mode = False
         
+        # Flag to suppress updates during bulk operations (e.g., workspace restore)
+        self._suppress_updates = False
+        
         # Initialize workspace manager
         self.workspace_manager = WorkspaceManager(project_path, self)
         self.workspace_manager.set_main_window(self)
@@ -280,7 +283,7 @@ class MainWindow(QMainWindow):
         if timeout > 0:
             QTimer.singleShot(timeout, lambda: self.msg_label.setText(""))
 
-    def open_file_in_tab(self, path):
+    def open_file_in_tab(self, path, suppress_updates=False):
         # check if already open
         for i in range(self.tabs.count()):
             if self.tabs.tabToolTip(i) == path:
@@ -307,11 +310,13 @@ class MainWindow(QMainWindow):
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
         self.tabs.setCurrentWidget(editor)
         
-        # Update mind map for newly opened file
-        self._update_mind_map_for_current_file()
+        # Update mind map for newly opened file (only if not suppressed)
+        if not suppress_updates and not self._suppress_updates:
+            self._update_mind_map_for_current_file()
         
-        # Trigger workspace save
-        self.workspace_manager.trigger_save()
+        # Trigger workspace save (only if not suppressed)
+        if not suppress_updates and not self._suppress_updates:
+            self.workspace_manager.trigger_save()
 
     def _update_tab_title_by_editor(self, editor: EditorWidget, dirty: bool):
         for i in range(self.tabs.count()):
