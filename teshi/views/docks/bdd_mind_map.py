@@ -106,13 +106,16 @@ class BDDMindMapView(QGraphicsView):
         super().__init__(parent)
 
         self.scene = QGraphicsScene()
+        self.scene.setSceneRect(-2000, -2000, 4000, 4000)  # Set a large scene area for panning
         self.setScene(self.scene)
 
         # Setup view properties
         self.setRenderHint(QPainter.Antialiasing)
-        self.setDragMode(QGraphicsView.RubberBandDrag)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setDragMode(QGraphicsView.NoDrag)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
+        self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
 
         # Node storage
         self.nodes = {}
@@ -126,6 +129,56 @@ class BDDMindMapView(QGraphicsView):
         self._scale_factor = 1.0
         self._min_scale = 0.3
         self._max_scale = 3.0
+        
+        # Dragging control
+        self._is_panning = False
+        self._last_pan_point = None
+
+    def mousePressEvent(self, event):
+        """Handle mouse press event"""
+        if event.button() == Qt.LeftButton:
+            # Check if clicking on an item
+            item = self.itemAt(event.pos())
+            if item is None:
+                # Start panning if not clicking on an item
+                self._is_panning = True
+                self._last_pan_point = event.pos()
+                self.setCursor(Qt.ClosedHandCursor)
+                event.accept()
+                return
+        
+        super().mousePressEvent(event)
+    
+    def mouseMoveEvent(self, event):
+        """Handle mouse move event"""
+        if self._is_panning and self._last_pan_point is not None:
+            # Calculate movement delta in view coordinates
+            delta = event.pos() - self._last_pan_point
+            self._last_pan_point = event.pos()
+            
+            # Adjust the scrollbars to move the view
+            self.horizontalScrollBar().setValue(
+                self.horizontalScrollBar().value() - int(delta.x())
+            )
+            self.verticalScrollBar().setValue(
+                self.verticalScrollBar().value() - int(delta.y())
+            )
+            
+            event.accept()
+            return
+        
+        super().mouseMoveEvent(event)
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release event"""
+        if event.button() == Qt.LeftButton and self._is_panning:
+            self._is_panning = False
+            self._last_pan_point = None
+            self.setCursor(Qt.ArrowCursor)
+            event.accept()
+            return
+        
+        super().mouseReleaseEvent(event)
 
     def wheelEvent(self, event: QWheelEvent):
         """Mouse wheel zoom"""
