@@ -36,7 +36,7 @@ class ProjectExplorer(QTreeView):
         
         # Delay tree population to avoid blocking startup
         from PySide6.QtCore import QTimer
-        QTimer.singleShot(50, lambda: self.populate_tree(root_item, target_dir))
+        QTimer.singleShot(50, lambda: self.populate_tree(root_item, target_dir, lazy_load=True))
 
         self.doubleClicked.connect(self.on_double_click)
 
@@ -165,9 +165,9 @@ class ProjectExplorer(QTreeView):
                 if child and child.text() == "Loading...":
                     # Remove placeholder
                     item.removeRow(0)
-                    # Load actual children
+                    # Load actual children with lazy loading for subdirectories
                     path = item.data(Qt.UserRole)
-                    self.populate_tree(item, path, lazy_load=False)
+                    self.populate_tree(item, path, lazy_load=True)
         
         self.state_changed.emit()
     
@@ -262,14 +262,13 @@ class ProjectExplorer(QTreeView):
             
             # Then add files
             for entry_name, full_path in files:
-                item = QStandardItem(entry_name)
-                item.setEditable(False)
-                if full_path.endswith(".md"):
+                # Only show markdown files
+                if full_path.lower().endswith(('.md', '.markdown')):
+                    item = QStandardItem(entry_name)
+                    item.setEditable(False)
                     item.setIcon(self.file_icon)
-                else:
-                    item.setIcon(self.unknown_file_icon)
-                item.setData(full_path, Qt.UserRole)
-                parent_item.appendRow(item)
+                    item.setData(full_path, Qt.UserRole)
+                    parent_item.appendRow(item)
                 
         except PermissionError:
             pass
