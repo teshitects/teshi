@@ -26,11 +26,14 @@ jobs:
     - name: Install Poetry
       run: |
         curl -sSL https://install.python-poetry.org | python3 -
+        # Add both possible Poetry paths to GITHUB_PATH
         echo "$HOME/.local/bin" >> $GITHUB_PATH
+        echo "$APPDATA/Python/Scripts" >> $GITHUB_PATH
         
     - name: Verify Poetry Installation
       run: |
-        export PATH="$HOME/.local/bin:$PATH"
+        # Add Poetry to PATH for this step
+        export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
         poetry --version
         
     - name: Cache Poetry dependencies
@@ -45,16 +48,15 @@ jobs:
         
     - name: Install dependencies
       run: |
-        export PATH="$HOME/.local/bin:$PATH"
+        export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
         poetry install --with build
         
     - name: Build executable
       run: |
-        export PATH="$HOME/.local/bin:$PATH"
+        export PATH="$HOME/.local/bin:$APPDATA/Python/Scripts:$PATH"
         poetry run pyinstaller --windowed --name teshi --icon=teshi/assets/teshi_icon256.png --add-data "teshi/assets;assets" teshi/main.py
         
     - name: Create release package
-      shell: bash
       run: |
         mkdir -p release
         if [ -d "dist/teshi" ]; then
