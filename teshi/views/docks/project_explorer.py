@@ -46,6 +46,7 @@ class ProjectExplorer(QTreeView):
         
         # Connect expanded/collapsed signals
         self.expanded.connect(self._on_expanded)
+        self.collapsed.connect(self._on_collapsed)
 
     def on_double_click(self, index):
         item = self.model.itemFromIndex(index)
@@ -110,6 +111,7 @@ class ProjectExplorer(QTreeView):
             new_path = os.path.join(parent_path, text)
             os.makedirs(new_path, exist_ok=True)
             new_item.setData(new_path, Qt.UserRole)
+            self.state_changed.emit()
 
     def add_testcase(self, parent_item):
         text, ok = QInputDialog.getText(self, "New Test Case", "Enter file name (without extension):")
@@ -125,6 +127,7 @@ class ProjectExplorer(QTreeView):
             with open(new_path, "w", encoding="utf-8") as f:
                 f.write("# New Test Case\n")
             new_item.setData(new_path, Qt.UserRole)
+            self.state_changed.emit()
 
     def rename_item(self, item):
         text, ok = QInputDialog.getText(self, "Rename", "Enter new name:", text=item.text())
@@ -135,6 +138,7 @@ class ProjectExplorer(QTreeView):
                 os.rename(old_path, new_path)
                 item.setText(text)
                 item.setData(new_path, Qt.UserRole)
+                self.state_changed.emit()
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Rename failed: {e}")
 
@@ -149,6 +153,7 @@ class ProjectExplorer(QTreeView):
                     os.remove(path)
                 parent = item.parent() or self.model.invisibleRootItem()
                 parent.removeRow(item.row())
+                self.state_changed.emit()
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Delete failed: {e}")
 
@@ -169,6 +174,10 @@ class ProjectExplorer(QTreeView):
                     path = item.data(Qt.UserRole)
                     self.populate_tree(item, path, lazy_load=True)
         
+        self.state_changed.emit()
+    
+    def _on_collapsed(self, index):
+        """Handle collapsed event"""
         self.state_changed.emit()
     
     def get_expanded_state(self) -> list:
@@ -199,6 +208,8 @@ class ProjectExplorer(QTreeView):
             return
         expanded_set = set(expanded_paths)
         self._restore_expanded_state(self.model.index(0, 0), expanded_set)
+        # Trigger state change after restoration to ensure it's saved
+        self.state_changed.emit()
     
     def _restore_expanded_state(self, index: QModelIndex, expanded_set: set):
         """Recursively restore expanded state"""
@@ -208,11 +219,31 @@ class ProjectExplorer(QTreeView):
         item = self.model.itemFromIndex(index)
         path = item.data(Qt.UserRole)
         if path and path in expanded_set and os.path.isdir(path):
+            # Expand this item
             self.expand(index)
+            
+            # After expanding, check if we need to load content (lazy loading)
+            if item.rowCount() == 1:
+                child = item.child(0, 0)
+                if child and child.text() == "Loading...":
+                    # Remove placeholder and load actual children
+                    item.removeRow(0)
+                    self.populate_tree(item, path, lazy_load=True)
         
-        # Recursively check children
+        # Recursively check children (after potential loading)
         for row in range(self.model.rowCount(index)):
             child_index = self.model.index(row, 0, index)
+            child_item = self.model.itemFromIndex(child_index)
+            child_path = child_item.data(Qt.UserRole)
+            
+            # If this child should be expanded and has a loading placeholder, load it first
+            if child_path and child_path in expanded_set and child_item.rowCount() == 1:
+                child = child_item.child(0, 0)
+                if child and child.text() == "Loading...":
+                    # Remove placeholder and load actual children
+                    child_item.removeRow(0)
+                    self.populate_tree(child_item, child_path, lazy_load=True)
+            
             self._restore_expanded_state(child_index, expanded_set)
 
 

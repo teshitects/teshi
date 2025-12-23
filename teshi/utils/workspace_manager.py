@@ -54,14 +54,24 @@ class WorkspaceManager(QObject):
                     })
         
         # Save dock widget states
+        print(f"DEBUG: Checking main_window attributes...")
+        print(f"DEBUG: main_window has project_dock: {hasattr(main_window, 'project_dock')}")
+        print(f"DEBUG: main_window has explorer: {hasattr(main_window, 'explorer')}")
         if hasattr(main_window, 'project_dock'):
             workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
             
             # Save project explorer expanded state
             if hasattr(main_window, 'explorer'):
+                expanded_folders = main_window.explorer.get_expanded_state()
+                print(f"DEBUG: Found {len(expanded_folders)} expanded folders: {expanded_folders}")
                 workspace_data['project_explorer'] = {
-                    'expanded_folders': main_window.explorer.get_expanded_state()
+                    'expanded_folders': expanded_folders
                 }
+                print(f"DEBUG: project_explorer state saved!")
+            else:
+                print(f"DEBUG: main_window does NOT have explorer attribute!")
+        else:
+            print(f"DEBUG: main_window does NOT have project_dock attribute!")
         
         return workspace_data
     
@@ -97,6 +107,13 @@ class WorkspaceManager(QObject):
             if hasattr(main_window, 'project_dock'):
                 try:
                     workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
+                    
+                    # Save project explorer expanded state
+                    if hasattr(main_window, 'explorer'):
+                        expanded_folders = main_window.explorer.get_expanded_state()
+                        workspace_data['project_explorer'] = {
+                            'expanded_folders': expanded_folders
+                        }
                 except:
                     pass
             
@@ -160,7 +177,7 @@ class WorkspaceManager(QObject):
             expanded_folders = project_explorer.get('expanded_folders', [])
             # Use QTimer to delay restoration until the tree is fully populated
             from PySide6.QtCore import QTimer
-            QTimer.singleShot(100, lambda: main_window.explorer.set_expanded_state(expanded_folders))
+            QTimer.singleShot(300, lambda: main_window.explorer.set_expanded_state(expanded_folders))
         
         # Restore open tabs
         open_tabs = workspace_data.get('open_tabs', [])
