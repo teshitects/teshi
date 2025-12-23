@@ -102,7 +102,15 @@ class FileWatcher:
         """Stop watching"""
         self._watching = False
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=5)
+            # Reduce timeout to avoid blocking UI shutdown
+            self._thread.join(timeout=1.0)
+    
+    def __del__(self):
+        """Destructor to ensure resource cleanup"""
+        try:
+            self.stop()
+        except:
+            pass  # Ignore errors during cleanup
     
     def is_watching(self) -> bool:
         """Whether currently watching"""

@@ -67,10 +67,42 @@ class WorkspaceManager(QObject):
     
     def save_workspace(self, main_window):
         """Save workspace immediately"""
-        workspace_data = self.get_workspace_state(main_window)
         try:
+            # Simplified and fast workspace data collection
+            workspace_data = {
+                'timestamp': time.time(),
+                'window_state': {
+                    'maximized': main_window.isMaximized()
+                },
+                'open_tabs': [],
+                'current_tab_index': getattr(main_window.tabs, 'currentIndex', lambda: -1)() if hasattr(main_window, 'tabs') else -1,
+                'dock_states': {}
+            }
+            
+            # Fast tab collection with minimal attribute access
+            if hasattr(main_window, 'tabs'):
+                try:
+                    for i in range(main_window.tabs.count()):
+                        widget = main_window.tabs.widget(i)
+                        if widget and hasattr(widget, 'filePath'):
+                            workspace_data['open_tabs'].append({
+                                'file_path': widget.filePath,
+                                'is_dirty': getattr(widget, 'dirty', False)
+                            })
+                except:
+                    # If tab collection fails, skip it
+                    pass
+            
+            # Simple dock state
+            if hasattr(main_window, 'project_dock'):
+                try:
+                    workspace_data['dock_states']['project'] = main_window.project_dock.isVisible()
+                except:
+                    pass
+            
+            # Fast JSON write without pretty printing for speed
             with open(self.workspace_file, 'w', encoding='utf-8') as f:
-                json.dump(workspace_data, f, indent=2, ensure_ascii=False)
+                json.dump(workspace_data, f, separators=(',', ':'), ensure_ascii=False)
             print(f"Workspace saved to: {self.workspace_file}")
         except Exception as e:
             print(f"Failed to save workspace: {e}")

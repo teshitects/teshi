@@ -287,10 +287,20 @@ class MainWindow(QMainWindow):
         # Stop delayed save timer
         self.workspace_manager.save_timer.stop()
         
-        # Stop file watcher
+        # Stop file watcher (this may take up to 1 second)
         if hasattr(self, 'index_manager'):
             self.index_manager.stop_file_watcher()
         
-        # Save workspace immediately
-        self.workspace_manager.save_workspace(self)
+        # Stop background index thread if still running
+        if hasattr(self, 'index_thread') and self.index_thread.isRunning():
+            self.index_thread.terminate()
+            self.index_thread.wait(1000)  # Wait up to 1 second
+        
+        # Save workspace synchronously but optimized for fast shutdown
+        try:
+            self.workspace_manager.save_workspace(self)
+            print("Workspace saved successfully")
+        except Exception as e:
+            print(f"Error saving workspace: {e}")
+        
         event.accept()

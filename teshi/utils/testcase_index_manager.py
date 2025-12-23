@@ -764,6 +764,11 @@ class TestCaseIndexManager:
         if self.file_watcher and self.file_watcher.is_watching():
             self.file_watcher.stop()
             print("File watcher stopped")
+        
+        # Cancel any pending update timer
+        if hasattr(self, '_update_timer') and self._update_timer:
+            self._update_timer.cancel()
+            self._update_timer = None
     
     def _on_file_changed(self, file_path: str, event_type: str):
         """File change callback"""
@@ -827,4 +832,7 @@ class TestCaseIndexManager:
     
     def __del__(self):
         """Destructor to ensure resource cleanup"""
-        self.stop_file_watcher()
+        try:
+            self.stop_file_watcher()
+        except:
+            pass  # Ignore errors during cleanup
