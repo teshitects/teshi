@@ -8,6 +8,7 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
 
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
 from teshi.utils.resource_path import resource_path
+from teshi.utils.tree_utils import TreeBuilder
 
 
 class SearchResultsDock(QWidget):
@@ -20,6 +21,9 @@ class SearchResultsDock(QWidget):
         super().__init__(parent)
         self.index_manager = index_manager
         self.current_results = []
+        self.tree_builder = TreeBuilder()
+        # Use the same project_path as the index manager (same as Project Explorer)
+        self.project_path = index_manager.project_path
         self._setup_ui()
         self._load_statistics()
         
@@ -80,8 +84,6 @@ class SearchResultsDock(QWidget):
         self.setLayout(layout)
         
         # Icons
-        self.folder_icon = QIcon(resource_path("assets/icons/folder.png"))
-        self.file_icon = QIcon(resource_path("assets/icons/testcase_normal.png"))
         self.result_icon = QIcon(resource_path("assets/icons/testcase_blue.png"))
         
     def _load_statistics(self):
@@ -107,7 +109,7 @@ class SearchResultsDock(QWidget):
             QMessageBox.critical(self, "Search Error", f"Error during search: {e}")
             
     def _display_results(self, results, query):
-        """Display search results in tree structure"""
+        """Display search results in tree structure showing full path from project root"""
         self.current_results = results
         self.results_model.clear()
         
@@ -117,45 +119,50 @@ class SearchResultsDock(QWidget):
             self.results_model.appendRow(no_results_item)
             return
             
-        # Group results by directory
-        dir_structure = {}
+        # Use the same project root as Project Explorer
+        project_root = self.project_path
+        
+        # Create root node (same as Project Explorer)
+        root_item = QStandardItem(os.path.basename(project_root))
+        root_item.setEditable(False)
+        root_item.setIcon(self.tree_builder.folder_icon)
+        root_item.setData(project_root, Qt.UserRole)
+        
+        # Create a temporary model for the root node to build the tree structure
+        temp_model = QStandardItemModel()
+        
+        # Build hierarchical structure for each result showing full path from project root
+        processed_paths = set()
         
         for result in results:
             file_path = result['file_path']
-            dir_name = os.path.dirname(file_path)
-            file_name = os.path.basename(file_path)
             
-            if dir_name not in dir_structure:
-                dir_structure[dir_name] = []
-            dir_structure[dir_name].append((file_name, result))
+            # Skip if we've already processed this file (avoid duplicates)
+            if file_path in processed_paths:
+                continue
+            processed_paths.add(file_path)
             
-        # Build tree
-        for dir_name, files in sorted(dir_structure.items()):
-            # Create directory item
-            dir_display_name = os.path.basename(dir_name) if os.path.basename(dir_name) else "Root"
-            dir_item = QStandardItem(f"{dir_display_name} ({len(files)})")
-            dir_item.setEditable(False)
-            dir_item.setIcon(self.folder_icon)
-            dir_item.setData(dir_name, Qt.UserRole)
+            # Add file path to temporary model with full hierarchy from project root
+            self.tree_builder.add_file_path_to_tree(
+                temp_model, 
+                file_path, 
+                result_data=result, 
+                file_icon=self.result_icon,
+                project_root=project_root
+            )
             
-            # Add files to directory
-            for file_name, result in files:
-                # Use search highlighted name if available
-                display_name = result.get('name_snippet', result['name'])
-                # For tree display, remove HTML tags
-                clean_name = display_name.replace("<mark>", "").replace("</mark>", "") if "<mark>" in display_name else display_name
-                
-                file_item = QStandardItem(clean_name)
-                file_item.setEditable(False)
-                file_item.setIcon(self.result_icon)
-                file_item.setData(result, Qt.UserRole)  # Store complete result
-                
-                dir_item.appendRow(file_item)
-                
-            self.results_model.appendRow(dir_item)
-            
-        # Expand first level
-        self.results_tree.expandToDepth(0)
+        # Move all items from temporary model to the root item
+        invisible_root = temp_model.invisibleRootItem()
+        for i in range(invisible_root.rowCount()):
+            child = invisible_root.takeChild(i, 0)
+            root_item.appendRow(child)
+            i -= 1  # Adjust index after taking child
+        
+        # Add root item to the main model
+        self.results_model.appendRow(root_item)
+        
+        # Expand tree to show results better
+        self.results_tree.expandToDepth(2)  # Expand a few levels to show results
         
         # Update stats with result count
         self.stats_label.setText(f"Found {len(results)} test cases for '{query}'")

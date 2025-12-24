@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt, Signal, QModelIndex
 import platform
 import subprocess
 from teshi.utils.resource_path import resource_path
+from teshi.utils.tree_utils import TreeBuilder
 
 
 class ProjectExplorer(QTreeView):
@@ -21,15 +22,12 @@ class ProjectExplorer(QTreeView):
         self.resize(600, 400)
 
         self.target_dir = target_dir
+        self.tree_builder = TreeBuilder()
 
         # Root node (project name)
         root_item = QStandardItem(os.path.basename(target_dir))
         root_item.setEditable(False)
-        root_item.setIcon(QIcon(resource_path("assets/icons/folder.png")))
         root_item.setData(target_dir, Qt.UserRole)  # store real path
-        self.folder_icon = QIcon(resource_path("assets/icons/folder.png"))
-        self.file_icon = QIcon(resource_path("assets/icons/testcase_normal.png"))
-        self.unknown_file_icon = QIcon(resource_path("assets/icons/unknown_file.png")) 
         
         self.model = QStandardItemModel()
         self.model.appendRow(root_item)
@@ -250,57 +248,9 @@ class ProjectExplorer(QTreeView):
 
     def populate_tree(self, parent_item, path, lazy_load=True):
         """Populate tree with directory contents. If lazy_load=True, only load immediate children."""
-        try:
-            # Skip hidden directories and common build/cache directories
-            skip_dirs = {'.git', '.teshi', '__pycache__', 'node_modules', '.vscode', '.idea', 'build', 'dist'}
-            
-            entries = []
-            try:
-                entries = os.listdir(path)
-            except PermissionError:
-                return
-            
-            # Separate directories and files, sort them
-            dirs = []
-            files = []
-            
-            for entry in entries:
-                full_path = os.path.join(path, entry)
-                if os.path.isdir(full_path):
-                    if entry.startswith('.') or entry in skip_dirs:
-                        continue
-                    dirs.append((entry, full_path))
-                else:
-                    files.append((entry, full_path))
-            
-            # Sort directories and files separately
-            dirs.sort(key=lambda x: x[0].lower())
-            files.sort(key=lambda x: x[0].lower())
-            
-            # Add directories first
-            for entry_name, full_path in dirs:
-                item = QStandardItem(entry_name)
-                item.setEditable(False)
-                item.setIcon(self.folder_icon)
-                item.setData(full_path, Qt.UserRole)
-                
-                # Add a dummy child to show expand arrow for lazy loading
-                if lazy_load:
-                    dummy_item = QStandardItem("Loading...")
-                    dummy_item.setEditable(False)
-                    item.appendRow(dummy_item)
-                
-                parent_item.appendRow(item)
-            
-            # Then add files
-            for entry_name, full_path in files:
-                # Only show markdown files
-                if full_path.lower().endswith(('.md', '.markdown')):
-                    item = QStandardItem(entry_name)
-                    item.setEditable(False)
-                    item.setIcon(self.file_icon)
-                    item.setData(full_path, Qt.UserRole)
-                    parent_item.appendRow(item)
-                
-        except PermissionError:
-            pass
+        self.tree_builder.populate_tree_from_directory(
+            parent_item, 
+            path, 
+            lazy_load=lazy_load, 
+            show_md_files_only=True
+        )
