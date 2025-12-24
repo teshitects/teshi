@@ -45,9 +45,15 @@ class TestCaseIndexManager:
     
     def _init_databases(self):
         """Initialize databases"""
-        # Initialize FTS5 database
-        conn = sqlite3.connect(self.db_path)
+        # Initialize FTS5 database with WAL mode for better concurrency
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
+        
+        # Enable WAL mode for better concurrent access
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA cache_size=10000")
+        cursor.execute("PRAGMA temp_store=MEMORY")
         
         # Check if FTS5 table exists, only create if it doesn't exist
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='testcases_fts'")
@@ -90,7 +96,7 @@ class TestCaseIndexManager:
         conn.close()
         
         # Initialize metadata database
-        conn = sqlite3.connect(self.metadata_db_path)
+        conn = sqlite3.connect(self.metadata_db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -244,7 +250,7 @@ class TestCaseIndexManager:
     
     def _get_file_meta(self, file_path: str) -> Optional[Dict]:
         """Get file metadata"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -265,7 +271,7 @@ class TestCaseIndexManager:
     
     def _update_file_meta(self, file_path: str, uuid: str, mtime: float, file_hash: str):
         """Update file metadata"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         now = datetime.now().isoformat()
@@ -281,7 +287,7 @@ class TestCaseIndexManager:
     
     def _remove_testcases_by_file(self, file_path: str):
         """Remove all test cases for specified file"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -300,7 +306,7 @@ class TestCaseIndexManager:
         if not testcases:
             return
         
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         for testcase in testcases:
@@ -340,75 +346,84 @@ class TestCaseIndexManager:
         new_files = 0
         
         # Batch database operations for better performance
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
+        # Enable better concurrency settings
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        
         try:
-            for file_path in md_files:
-                try:
-                    # 获取文件修改时间和哈希
-                    file_mtime = os.path.getmtime(file_path)
-                    file_hash = self._get_file_hash(file_path)
-                    
-                    # Check if file already exists and is unchanged
-                    existing_meta = self._get_file_meta(file_path)
-                    
-                    if existing_meta:
-                        if existing_meta['file_mtime'] == file_mtime and existing_meta['file_hash'] == file_hash:
-                            continue  # File unchanged, skip
+            batch_size = 100  # Process files in batches to avoid long-running transactions
+            for i in range(0, len(md_files), batch_size):
+                batch_files = md_files[i:i + batch_size]
+                
+                for file_path in batch_files:
+                    try:
+                        # 获取文件修改时间和哈希
+                        file_mtime = os.path.getmtime(file_path)
+                        file_hash = self._get_file_hash(file_path)
                         
-                        updated_files += 1
-                    else:
-                        new_files += 1
-                    
-                    # Parse test cases
-                    testcases = self._parse_markdown_testcase(file_path)
-                    
-                    # Remove old index first (if exists)
-                    cursor.execute("DELETE FROM testcases_fts WHERE file_path = ?", (file_path,))
-                    
-                    # Add new index if testcases found
-                    if testcases:
-                        for testcase in testcases:
-                            cursor.execute("""
-                                INSERT INTO testcases_fts (uuid, name, preconditions, steps, expected_results, notes, file_path)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (
-                                testcase.uuid,
-                                testcase.name,
-                                testcase.preconditions,
-                                testcase.steps,
-                                testcase.expected_results,
-                                testcase.notes,
-                                file_path
-                            ))
+                        # Check if file already exists and is unchanged
+                        existing_meta = self._get_file_meta(file_path)
                         
-                        # Update metadata using first testcase's UUID
-                        sample_uuid = testcases[0].uuid
-                    else:
-                        # Use dummy UUID if no testcases found
-                        sample_uuid = self._generate_uuid("dummy", file_path)
-                    
-                    # Update metadata
-                    now = datetime.now().isoformat()
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO testcases_meta (uuid, file_path, file_mtime, file_hash, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, 
-                            COALESCE((SELECT created_at FROM testcases_meta WHERE file_path = ?), ?), ?)
-                    """, (sample_uuid, file_path, file_mtime, file_hash, file_path, now, now))
-                    
-                except sqlite3.Error as e:
-                    print(f"SQLite error processing file {file_path}: {e}")
-                    # If database error, try to rebuild database
-                    if "recursively defined fts5" in str(e).lower():
-                        print("Detected FTS5 recursive definition error, attempting rebuild...")
-                        conn.close()
-                        return self.build_index(force_rebuild=True)
-                except Exception as e:
-                    print(f"Error processing file {file_path}: {e}")
-            
-            # Commit all changes at once
-            conn.commit()
+                        if existing_meta:
+                            if existing_meta['file_mtime'] == file_mtime and existing_meta['file_hash'] == file_hash:
+                                continue  # File unchanged, skip
+                            
+                            updated_files += 1
+                        else:
+                            new_files += 1
+                        
+                        # Parse test cases
+                        testcases = self._parse_markdown_testcase(file_path)
+                        
+                        # Remove old index first (if exists)
+                        cursor.execute("DELETE FROM testcases_fts WHERE file_path = ?", (file_path,))
+                        
+                        # Add new index if testcases found
+                        if testcases:
+                            for testcase in testcases:
+                                cursor.execute("""
+                                    INSERT INTO testcases_fts (uuid, name, preconditions, steps, expected_results, notes, file_path)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (
+                                    testcase.uuid,
+                                    testcase.name,
+                                    testcase.preconditions,
+                                    testcase.steps,
+                                    testcase.expected_results,
+                                    testcase.notes,
+                                    file_path
+                                ))
+                            
+                            # Update metadata using first testcase's UUID
+                            sample_uuid = testcases[0].uuid
+                        else:
+                            # Use dummy UUID if no testcases found
+                            sample_uuid = self._generate_uuid("dummy", file_path)
+                        
+                        # Update metadata
+                        now = datetime.now().isoformat()
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO testcases_meta (uuid, file_path, file_mtime, file_hash, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, 
+                                COALESCE((SELECT created_at FROM testcases_meta WHERE file_path = ?), ?), ?)
+                        """, (sample_uuid, file_path, file_mtime, file_hash, file_path, now, now))
+                        
+                    except sqlite3.Error as e:
+                        print(f"SQLite error processing file {file_path}: {e}")
+                        # If database error, try to rebuild database
+                        if "recursively defined fts5" in str(e).lower():
+                            print("Detected FTS5 recursive definition error, attempting rebuild...")
+                            conn.close()
+                            return self.build_index(force_rebuild=True)
+                    except Exception as e:
+                        print(f"Error processing file {file_path}: {e}")
+                
+                # Commit batch
+                conn.commit()
+                print(f"Processed batch {i//batch_size + 1}/{(len(md_files)-1)//batch_size + 1}")
             
             # Clean up index for non-existent files
             self._cleanup_orphaned_files(md_files, cursor)
@@ -426,7 +441,7 @@ class TestCaseIndexManager:
         """Clean up index for non-existent files"""
         close_conn = False
         if cursor is None:
-            conn = sqlite3.connect(self.db_path)
+            conn = sqlite3.connect(self.db_path, timeout=30.0)
             cursor = conn.cursor()
             close_conn = True
         
@@ -450,7 +465,7 @@ class TestCaseIndexManager:
     
     def _set_project_state(self, key: str, value: str):
         """Set project state"""
-        conn = sqlite3.connect(self.metadata_db_path)
+        conn = sqlite3.connect(self.metadata_db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -462,7 +477,7 @@ class TestCaseIndexManager:
     
     def _get_project_state(self, key: str) -> Optional[str]:
         """Get project state"""
-        conn = sqlite3.connect(self.metadata_db_path)
+        conn = sqlite3.connect(self.metadata_db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("SELECT value FROM project_state WHERE key = ?", (key,))
@@ -481,7 +496,7 @@ class TestCaseIndexManager:
         if not query or not query.strip():
             return []
             
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         results = []
@@ -700,7 +715,7 @@ class TestCaseIndexManager:
     
     def get_all_testcases(self) -> List[Dict]:
         """Get all test cases"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -726,7 +741,7 @@ class TestCaseIndexManager:
     
     def get_statistics(self) -> Dict:
         """Get index statistics"""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         cursor = conn.cursor()
         
         cursor.execute("SELECT COUNT(*) FROM testcases_fts")
@@ -747,7 +762,7 @@ class TestCaseIndexManager:
         }
     
     def start_file_watcher(self):
-        """Start file watcher"""
+        """Start file watcher with delay to avoid conflict with index building"""
         if self.file_watcher is None:
             self.file_watcher = FileWatcher(
                 watch_paths=[self.project_path],
@@ -756,8 +771,16 @@ class TestCaseIndexManager:
             )
         
         if not self.file_watcher.is_watching():
-            self.file_watcher.start()
-            print("File watcher started")
+            # Delay starting file watcher to avoid conflict with index building
+            import threading
+            def delayed_start():
+                import time
+                time.sleep(3.0)  # Wait 3 seconds for index building to complete
+                if self.file_watcher and not self.file_watcher.is_watching():
+                    self.file_watcher.start()
+                    print("File watcher started")
+            
+            threading.Thread(target=delayed_start, daemon=True).start()
     
     def stop_file_watcher(self):
         """Stop file watcher"""
@@ -796,39 +819,82 @@ class TestCaseIndexManager:
         self._update_timer.start()
     
     def _update_single_file(self, file_path: str):
-        """Update index for single file"""
-        try:
-            print(f"Starting update for file: {file_path}")
-            
-            # Remove old index
-            self._remove_testcases_by_file(file_path)
-            
-            # Parse and add new index
-            testcases = self._parse_markdown_testcase(file_path)
-            print(f"Parsed {len(testcases)} test cases from {file_path}")
-            
-            if testcases:
-                self._add_testcases(testcases, file_path)
-                
-                # Update metadata
-                file_mtime = os.path.getmtime(file_path)
-                file_hash = self._get_file_hash(file_path)
-                sample_uuid = testcases[0].uuid
-                self._update_file_meta(file_path, sample_uuid, file_mtime, file_hash)
-                
-                print(f"Successfully updated index for file: {file_path}")
-            else:
-                print(f"No test cases found in file: {file_path}")
+        """Update index for single file with retry mechanism"""
+        max_retries = 3
+        retry_delay = 0.5
         
-        except sqlite3.Error as e:
-            print(f"SQLite error updating file {file_path}: {e}")
-        except Exception as e:
-            print(f"General error updating file {file_path}: {e}")
-            import traceback
-            traceback.print_exc()
+        for attempt in range(max_retries):
+            try:
+                print(f"Starting update for file: {file_path} (attempt {attempt + 1})")
+                
+                # Use a single connection for the entire update operation
+                conn = sqlite3.connect(self.db_path, timeout=30.0)
+                cursor = conn.cursor()
+                
+                try:
+                    # Remove old index
+                    cursor.execute("DELETE FROM testcases_fts WHERE file_path = ?", (file_path,))
+                    cursor.execute("DELETE FROM testcases_meta WHERE file_path = ?", (file_path,))
+                    
+                    # Parse and add new index
+                    testcases = self._parse_markdown_testcase(file_path)
+                    print(f"Parsed {len(testcases)} test cases from {file_path}")
+                    
+                    if testcases:
+                        for testcase in testcases:
+                            cursor.execute("""
+                                INSERT INTO testcases_fts (uuid, name, preconditions, steps, expected_results, notes, file_path)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                testcase.uuid,
+                                testcase.name,
+                                testcase.preconditions,
+                                testcase.steps,
+                                testcase.expected_results,
+                                testcase.notes,
+                                file_path
+                            ))
+                        
+                        # Update metadata
+                        file_mtime = os.path.getmtime(file_path)
+                        file_hash = self._get_file_hash(file_path)
+                        sample_uuid = testcases[0].uuid
+                        now = datetime.now().isoformat()
+                        
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO testcases_meta (uuid, file_path, file_mtime, file_hash, created_at, updated_at)
+                            VALUES (?, ?, ?, ?, 
+                                COALESCE((SELECT created_at FROM testcases_meta WHERE file_path = ?), ?), ?)
+                        """, (sample_uuid, file_path, file_mtime, file_hash, file_path, now, now))
+                        
+                        conn.commit()
+                        print(f"Successfully updated index for file: {file_path}")
+                    else:
+                        print(f"No test cases found in file: {file_path}")
+                    
+                    # Success - break out of retry loop
+                    break
+                    
+                finally:
+                    conn.close()
+                    
+            except sqlite3.Error as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    print(f"Database locked, retrying in {retry_delay}s...")
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    print(f"SQLite error updating file {file_path}: {e}")
+                    break
+            except Exception as e:
+                print(f"General error updating file {file_path}: {e}")
+                import traceback
+                traceback.print_exc()
+                break
         
-        finally:
-            self._update_timer = None
+        # Update timer cleanup
+        self._update_timer = None
     
     def __del__(self):
         """Destructor to ensure resource cleanup"""

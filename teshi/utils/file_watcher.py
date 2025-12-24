@@ -40,8 +40,8 @@ class FileWatcher:
                     current_files.add(watch_path)
                 elif os.path.isdir(watch_path):
                     for root, dirs, files in os.walk(watch_path):
-                        # Skip hidden directories
-                        dirs[:] = [d for d in dirs if not d.startswith('.')]
+                        # Skip hidden directories and .teshi directory
+                        dirs[:] = [d for d in dirs if not d.startswith('.') and d != '.teshi']
                         
                         for file in files:
                             if file.endswith('.md'):  # Only monitor Markdown files
