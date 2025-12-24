@@ -8,6 +8,7 @@ from PySide6.QtGui import QAction, QIcon, QCloseEvent
 from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.docks.bdd_mind_map import BDDMindMapDock
+from teshi.views.docks.search_results import SearchResultsDock
 from teshi.views.widgets.editor_widget import EditorWidget
 from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog
 from teshi.utils.workspace_manager import WorkspaceManager
@@ -180,12 +181,26 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.LeftToolBarArea, left_toolbar)
 
         action_project = left_toolbar.addAction(QIcon(resource_path("assets/icons/project.png")), "Project")
-        action_project.triggered.connect(lambda: self.toggle_dock(self.project_dock))
+        action_project.triggered.connect(lambda: self.switch_to_project_dock())
         self.project_dock = QDockWidget("Project", self)
-        self.explorer = ProjectExplorer(    self.project_path)
+        self.explorer = ProjectExplorer(self.project_path)
         self.project_dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
+        
+        # Add search action to left toolbar (below project button)
+        action_search = left_toolbar.addAction(QIcon(resource_path("assets/icons/testcase_blue.png")), "Search")
+        action_search.triggered.connect(lambda: self.switch_to_search_dock())
+        self.search_dock = QDockWidget("Search", self)
+        self.search_results = SearchResultsDock(self.index_manager)
+        self.search_results.file_open_requested.connect(self.open_file_in_tab)
+        self.search_results.state_changed.connect(self.workspace_manager.trigger_save)
+        self.search_dock.setWidget(self.search_results)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.search_dock)
+        self.search_dock.hide()
+        
+        # Track which dock is currently visible in the left area
+        self.current_left_dock = None  # None, 'project', or 'search'
 
         # Right Toolbar
         right_toolbar = QToolBar("RightToolbar", self)
@@ -370,7 +385,40 @@ class MainWindow(QMainWindow):
         """Update BDD mind map with current file content (immediate)"""
         self._do_update_mind_map()
 
+    def switch_to_project_dock(self):
+        """Switch to project explorer dock"""
+        if self.current_left_dock == 'project':
+            # If project is already visible, hide it
+            self.project_dock.hide()
+            self.current_left_dock = None
+        else:
+            # Hide search dock if visible
+            if self.search_dock.isVisible():
+                self.search_dock.hide()
+            # Show project dock
+            self.project_dock.show()
+            self.current_left_dock = 'project'
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
+        
+    def switch_to_search_dock(self):
+        """Switch to search results dock"""
+        if self.current_left_dock == 'search':
+            # If search is already visible, hide it
+            self.search_dock.hide()
+            self.current_left_dock = None
+        else:
+            # Hide project dock if visible
+            if self.project_dock.isVisible():
+                self.project_dock.hide()
+            # Show search dock
+            self.search_dock.show()
+            self.current_left_dock = 'search'
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
+    
     def toggle_dock(self, dock):
+        """Legacy toggle method for backward compatibility"""
         if dock.isVisible():
             dock.hide()
         else:

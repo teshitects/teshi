@@ -82,6 +82,17 @@ class WorkspaceManager(QObject):
                 'visible': main_window.bdd_mind_map_dock.isVisible(),
                 'width': main_window.bdd_mind_map_dock.width()
             }
+            
+        # Save Search dock state
+        if hasattr(main_window, 'search_dock'):
+            workspace_data['dock_states']['search'] = {
+                'visible': main_window.search_dock.isVisible(),
+                'width': main_window.search_dock.width()
+            }
+            
+        # Save current left dock state
+        if hasattr(main_window, 'current_left_dock'):
+            workspace_data['current_left_dock'] = main_window.current_left_dock
         
         # Save global BDD mode
         if hasattr(main_window, '_global_bdd_mode'):
@@ -141,6 +152,23 @@ class WorkspaceManager(QObject):
                         'visible': main_window.bdd_mind_map_dock.isVisible(),
                         'width': main_window.bdd_mind_map_dock.width()
                     }
+                except:
+                    pass
+                    
+            # Save Search dock state
+            if hasattr(main_window, 'search_dock'):
+                try:
+                    workspace_data['dock_states']['search'] = {
+                        'visible': main_window.search_dock.isVisible(),
+                        'width': main_window.search_dock.width()
+                    }
+                except:
+                    pass
+                
+            # Save current left dock state
+            if hasattr(main_window, 'current_left_dock'):
+                try:
+                    workspace_data['current_left_dock'] = main_window.current_left_dock
                 except:
                     pass
             
@@ -231,6 +259,42 @@ class WorkspaceManager(QObject):
             
             # Save width for later restoration
             bdd_width = bdd_state.get('width')
+            
+        # Restore Search dock
+        search_width = None
+        if hasattr(main_window, 'search_dock') and 'search' in dock_states:
+            search_state = dock_states['search']
+            if search_state.get('visible', False):
+                main_window.search_dock.show()
+            else:
+                main_window.search_dock.hide()
+            
+            # Save width for later restoration
+            search_width = search_state.get('width')
+            
+        # Restore current left dock state
+        current_left_dock = workspace_data.get('current_left_dock', None)
+        if hasattr(main_window, 'current_left_dock'):
+            main_window.current_left_dock = current_left_dock
+            # Initially hide both docks, then show the appropriate one
+            if hasattr(main_window, 'project_dock'):
+                main_window.project_dock.hide()
+            if hasattr(main_window, 'search_dock'):
+                main_window.search_dock.hide()
+                
+            # Apply the current dock visibility based on saved state after a short delay
+            def restore_dock_visibility():
+                if current_left_dock == 'project':
+                    if hasattr(main_window, 'project_dock'):
+                        main_window.project_dock.show()
+                elif current_left_dock == 'search':
+                    if hasattr(main_window, 'search_dock'):
+                        main_window.search_dock.show()
+                # If None or any other value, keep both hidden
+            
+            # Use QTimer to delay visibility restoration
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(150, restore_dock_visibility)
         
         # Use QTimer to restore dock widths after the window is fully initialized
         from PySide6.QtCore import QTimer
@@ -239,6 +303,8 @@ class WorkspaceManager(QObject):
                 main_window.resizeDocks([main_window.project_dock], [project_width], Qt.Horizontal)
             if bdd_width and bdd_width > 0 and hasattr(main_window, 'bdd_mind_map_dock'):
                 main_window.resizeDocks([main_window.bdd_mind_map_dock], [bdd_width], Qt.Horizontal)
+            if search_width and search_width > 0 and hasattr(main_window, 'search_dock'):
+                main_window.resizeDocks([main_window.search_dock], [search_width], Qt.Horizontal)
         
         QTimer.singleShot(100, restore_dock_widths)
         
