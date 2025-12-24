@@ -10,7 +10,7 @@ from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.docks.bdd_mind_map import BDDMindMapDock
 from teshi.views.docks.search_results import SearchResultsDock
 from teshi.views.widgets.editor_widget import EditorWidget
-from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog
+# from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog  # No longer used
 from teshi.utils.workspace_manager import WorkspaceManager
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
 from teshi.utils.resource_path import resource_path
@@ -68,16 +68,6 @@ class MainWindow(QMainWindow):
         file_menu.addAction(import_action)
         import_action.triggered.connect(self._import_test_cases)
 
-        # Search Menu
-        search_menu = menubar.addMenu("Search")
-        search_testcase_action = QAction("Search Test Cases", self)
-        search_menu.addAction(search_testcase_action)
-        search_testcase_action.triggered.connect(self._show_testcase_search_dialog)
-        
-        rebuild_index_action = QAction("Rebuild Index", self)
-        search_menu.addAction(rebuild_index_action)
-        rebuild_index_action.triggered.connect(self._rebuild_testcase_index)
-
         # Help Menu
         help_menu = menubar.addMenu("Help")
         about_action = QAction("About", self)
@@ -128,16 +118,8 @@ class MainWindow(QMainWindow):
             self.show_message(f"Error initializing test case index: {e}", 5000)
 
     def _show_testcase_search_dialog(self):
-        """Show test case search dialog"""
-        try:
-            # Create dialog only if it doesn't exist or was closed
-            if not hasattr(self, 'search_dialog') or not self.search_dialog.isVisible():
-                self.search_dialog = TestcaseSearchDialog(self.index_manager, self)
-            self.search_dialog.show()
-            self.search_dialog.raise_()
-            self.search_dialog.activateWindow()
-        except Exception as e:
-            self.show_message(f"Error opening search dialog: {e}", 5000)
+        """Show test case search dialog (legacy method - no longer used)"""
+        pass
 
     def _rebuild_testcase_index(self):
         """Rebuild test case index"""

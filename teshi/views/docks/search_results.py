@@ -81,6 +81,43 @@ class SearchResultsDock(QWidget):
         
         layout.addWidget(self.results_tree)
         
+        # Bottom button area
+        button_layout = QHBoxLayout()
+        button_layout.setContentsMargins(0, 5, 0, 0)
+        
+        # Add stretch to push button to the right
+        button_layout.addStretch()
+        
+        # Rebuild Index button
+        self.rebuild_button = QPushButton("Rebuild Index")
+        self.rebuild_button.setStyleSheet("""
+            QPushButton {
+                padding: 5px 15px;
+                background-color: palette(button);
+                border: 1px solid palette(mid);
+                border-radius: 4px;
+                font-size: 12px;
+                color: palette(button-text);
+            }
+            QPushButton:hover {
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
+                border: 1px solid palette(highlight);
+            }
+            QPushButton:pressed {
+                background-color: palette(dark);
+            }
+            QPushButton:disabled {
+                background-color: palette(midlight);
+                color: palette(mid);
+                border: 1px solid palette(midlight);
+            }
+        """)
+        self.rebuild_button.clicked.connect(self._rebuild_index)
+        button_layout.addWidget(self.rebuild_button)
+        
+        layout.addLayout(button_layout)
+        
         self.setLayout(layout)
         
         # Icons
@@ -244,3 +281,61 @@ class SearchResultsDock(QWidget):
                 subprocess.Popen(["xdg-open", dir_path])
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Cannot open directory: {e}")
+    
+    def _rebuild_index(self):
+        """Rebuild test case index"""
+        try:
+            self.rebuild_button.setEnabled(False)
+            self.rebuild_button.setText("Rebuilding...")
+            
+            # Stop file watcher
+            self.index_manager.stop_file_watcher()
+            
+            # Build index in background thread
+            from PySide6.QtCore import QThread, Signal
+            class RebuildThread(QThread):
+                finished = Signal(int)
+                error = Signal(str)
+                
+                def __init__(self, index_manager):
+                    super().__init__()
+                    self.index_manager = index_manager
+                
+                def run(self):
+                    try:
+                        count = self.index_manager.build_index(force_rebuild=True)
+                        self.finished.emit(count)
+                    except Exception as e:
+                        self.error.emit(str(e))
+            
+            # Start background rebuild
+            self.rebuild_thread = RebuildThread(self.index_manager)
+            self.rebuild_thread.finished.connect(lambda count: self._on_rebuild_finished(count))
+            self.rebuild_thread.error.connect(lambda error: self._on_rebuild_error(error))
+            self.rebuild_thread.start()
+            
+        except Exception as e:
+            self._on_rebuild_error(f"Error starting rebuild: {e}")
+    
+    def _on_rebuild_finished(self, count):
+        """Handle rebuild completion"""
+        self.rebuild_button.setEnabled(True)
+        self.rebuild_button.setText("Rebuild Index")
+        
+        # Update statistics
+        self._load_statistics()
+        
+        # If there was a search query, refresh results
+        if self.last_search_query:
+            self._search(self.last_search_query)
+        
+        # Show success message
+        self.stats_label.setText(f"Rebuilt index: {count} files processed")
+        self.state_changed.emit()
+    
+    def _on_rebuild_error(self, error):
+        """Handle rebuild error"""
+        self.rebuild_button.setEnabled(True)
+        self.rebuild_button.setText("Rebuild Index")
+        QMessageBox.critical(self, "Rebuild Error", f"Error rebuilding index: {error}")
+        self.state_changed.emit()
