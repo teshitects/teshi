@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QPushButton, 
     QTreeView, QMenu, QMessageBox, QLabel, QFrame, QHeaderView
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
 
 from teshi.utils.testcase_index_manager import TestCaseIndexManager
@@ -24,6 +24,16 @@ class SearchResultsDock(QWidget):
         self.tree_builder = TreeBuilder()
         # Use the same project_path as the index manager (same as Project Explorer)
         self.project_path = index_manager.project_path
+        
+        # Debounce timer for search
+        self.debounce_timer = QTimer()
+        self.debounce_timer.setSingleShot(True)
+        self.debounce_timer.setInterval(300)  # 300ms debounce
+        self.debounce_timer.timeout.connect(self._perform_search)
+        
+        # Store last search query to maintain results when cleared
+        self.last_search_query = ""
+        
         self._setup_ui()
         self._load_statistics()
         
@@ -37,20 +47,10 @@ class SearchResultsDock(QWidget):
         search_layout = QHBoxLayout()
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Enter search terms...")
-        self.search_edit.returnPressed.connect(self._search)
-        
-        self.search_btn = QPushButton("Search")
-        self.search_btn.clicked.connect(self._search)
-        self.search_btn.setMaximumWidth(60)
-        
-        self.clear_btn = QPushButton("Clear")
-        self.clear_btn.clicked.connect(self._clear_search)
-        self.clear_btn.setMaximumWidth(50)
+        # Connect text change event for debounce search
+        self.search_edit.textChanged.connect(self._on_text_changed)
         
         search_layout.addWidget(self.search_edit, 1)
-        search_layout.addWidget(self.search_btn)
-        search_layout.addWidget(self.clear_btn)
-        
         layout.addLayout(search_layout)
         
         # Statistics information
@@ -94,9 +94,27 @@ class SearchResultsDock(QWidget):
             text += f"\nLast indexed: {stats['last_index_time'][:19]}"
         self.stats_label.setText(text)
         
-    def _search(self):
-        """Execute search"""
+    def _on_text_changed(self):
+        """Handle text change with debouncing"""
+        # Restart debounce timer
+        self.debounce_timer.stop()
+        self.debounce_timer.start()
+    
+    def _perform_search(self):
+        """Perform the actual search"""
         query = self.search_edit.text().strip()
+        if not query:
+            # If input is empty, don't search and keep last results
+            return
+        
+        self.last_search_query = query
+        self._search(query)
+    
+    def _search(self, query=None):
+        """Execute search"""
+        if query is None:
+            query = self.search_edit.text().strip()
+        
         if not query:
             return
             
@@ -168,12 +186,13 @@ class SearchResultsDock(QWidget):
         self.stats_label.setText(f"Found {len(results)} test cases for '{query}'")
         
     def _clear_search(self):
-        """Clear search"""
+        """Clear search - no longer used but kept for compatibility"""
+        # This method is no longer used since we removed the clear button
+        # but keeping it for potential future use
         self.search_edit.clear()
-        self.results_model.clear()
-        self.current_results = []
-        self._load_statistics()
-        # Trigger state change after clearing
+        # Don't clear results or reset statistics when input is cleared
+        # Let the last search results remain visible
+        # Trigger state change 
         self.state_changed.emit()
         
     def _on_double_click(self, index):
