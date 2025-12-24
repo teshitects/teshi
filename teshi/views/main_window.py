@@ -189,7 +189,7 @@ class MainWindow(QMainWindow):
         self.project_dock.hide()
         
         # Add search action to left toolbar (below project button)
-        action_search = left_toolbar.addAction(QIcon(resource_path("assets/icons/testcase_blue.png")), "Search")
+        action_search = left_toolbar.addAction(QIcon(resource_path("assets/icons/search.png")), "Search")
         action_search.triggered.connect(lambda: self.switch_to_search_dock())
         self.search_dock = QDockWidget("Search", self)
         self.search_results = SearchResultsDock(self.index_manager)
@@ -214,7 +214,7 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.RightToolBarArea, right_toolbar)
 
         # Add BDD Mind Map dock to right toolbar
-        action_bdd = right_toolbar.addAction(QIcon(resource_path("assets/icons/testcase_blue.png")), "BDD Mind Map")
+        action_bdd = right_toolbar.addAction(QIcon(resource_path("assets/icons/mindmap.png")), "BDD Mind Map")
         action_bdd.triggered.connect(lambda: self.toggle_dock(self.bdd_mind_map_dock))
         self.bdd_mind_map_dock = QDockWidget("BDD Mind Map", self)
         self.bdd_mind_map = BDDMindMapDock(self.project_path)
