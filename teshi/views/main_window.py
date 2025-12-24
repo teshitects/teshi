@@ -81,14 +81,14 @@ class MainWindow(QMainWindow):
         close_project_action.triggered.connect(self._close_project)
 
         # View Menu
-        view_menu = menubar.addMenu("View")
-        
-        view_menu.addSeparator()
+        # view_menu = menubar.addMenu("View")
+        #
+        # view_menu.addSeparator()
         
         # Clear highlighting action
         clear_highlight_action = QAction("Clear Highlighting", self)
-        clear_highlight_action.setShortcut(Qt.CTRL | Qt.SHIFT | Qt.Key_H)
-        view_menu.addAction(clear_highlight_action)
+        # clear_highlight_action.setShortcut(Qt.CTRL | Qt.SHIFT | Qt.Key_H)
+        # view_menu.addAction(clear_highlight_action)
         clear_highlight_action.triggered.connect(self.clear_highlight_keywords)
 
         # Help Menu
