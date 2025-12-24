@@ -505,8 +505,22 @@ class TestCaseIndexManager:
             # Prepare search terms for Chinese n-gram search
             search_terms = self._prepare_chinese_search_terms(query)
             
-            # Strategy 1: Try FTS5 search with multiple terms
-            fts_query = " OR ".join([f'"{term}"' for term in search_terms])
+            # Strategy 1: Try FTS5 search with improved logic for space-separated keywords
+            keywords = [kw.strip() for kw in query.split() if kw.strip()]
+            
+            if len(keywords) > 1:
+                # For space-separated keywords, use AND logic between keywords
+                # but OR logic for variations within each keyword
+                keyword_queries = []
+                for keyword in keywords:
+                    keyword_terms = self._prepare_chinese_search_terms(keyword)
+                    keyword_query = " OR ".join([f'"{term}"' for term in keyword_terms])
+                    keyword_queries.append(f"({keyword_query})")
+                
+                fts_query = " AND ".join(keyword_queries)
+            else:
+                # For single keyword, use OR logic for all terms
+                fts_query = " OR ".join([f'"{term}"' for term in search_terms])
             
             cursor.execute("""
                 SELECT uuid, name, preconditions, steps, expected_results, notes, file_path,
@@ -603,36 +617,46 @@ class TestCaseIndexManager:
         return results
     
     def _prepare_chinese_search_terms(self, query: str) -> List[str]:
-        """Prepare search terms for Chinese n-gram search"""
+        """Prepare search terms for Chinese n-gram search with space-separated keywords support"""
         terms = []
         query = query.strip()
         
         if not query:
             return terms
         
-        # Add original query
-        terms.append(query)
+        # Split query by spaces to support multiple keywords
+        # Preserve the original space-separated keywords
+        keywords = [kw.strip() for kw in query.split() if kw.strip()]
         
-        # For Chinese text, extract individual characters (1-gram)
-        chinese_chars = re.findall(r'[\u4e00-\u9fff]', query)
-        if chinese_chars:
-            # Add individual Chinese characters as search terms
-            for char in chinese_chars:
-                if char not in terms:
-                    terms.append(char)
+        if not keywords:
+            return terms
         
-        # For Chinese text, extract character pairs (2-gram)
-        if len(chinese_chars) >= 2:
-            for i in range(len(chinese_chars) - 1):
-                bigram = chinese_chars[i] + chinese_chars[i + 1]
-                if bigram not in terms:
-                    terms.append(bigram)
-        
-        # Extract English words and common mixed terms
-        english_words = re.findall(r'[a-zA-Z]+', query)
-        for word in english_words:
-            if word.lower() not in [t.lower() for t in terms]:
-                terms.append(word)
+        # Process each keyword separately
+        for keyword in keywords:
+            # Add the keyword as is
+            if keyword not in terms:
+                terms.append(keyword)
+            
+            # For Chinese text, extract individual characters (1-gram)
+            chinese_chars = re.findall(r'[\u4e00-\u9fff]', keyword)
+            if chinese_chars:
+                # Add individual Chinese characters as search terms
+                for char in chinese_chars:
+                    if char not in terms:
+                        terms.append(char)
+            
+            # For Chinese text, extract character pairs (2-gram)
+            if len(chinese_chars) >= 2:
+                for i in range(len(chinese_chars) - 1):
+                    bigram = chinese_chars[i] + chinese_chars[i + 1]
+                    if bigram not in terms:
+                        terms.append(bigram)
+            
+            # Extract English words from the keyword
+            english_words = re.findall(r'[a-zA-Z]+', keyword)
+            for word in english_words:
+                if word.lower() not in [t.lower() for t in terms]:
+                    terms.append(word)
         
         return terms
     
