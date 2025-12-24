@@ -67,6 +67,14 @@ class MainWindow(QMainWindow):
         import_action = QAction("Import Test Cases", self)
         file_menu.addAction(import_action)
         import_action.triggered.connect(self._import_test_cases)
+        
+        # Add separator
+        file_menu.addSeparator()
+        
+        # Close Project action
+        close_project_action = QAction("Close Project", self)
+        file_menu.addAction(close_project_action)
+        close_project_action.triggered.connect(self._close_project)
 
         # Help Menu
         help_menu = menubar.addMenu("Help")
@@ -144,6 +152,87 @@ class MainWindow(QMainWindow):
         # import_dialog = TestcaseImportDialog(self)
         # import_dialog.exec()
 
+    def _close_project(self):
+        """Close the current project and return to project selection"""
+        # Check if there are unsaved changes in any tab
+        unsaved_tabs = []
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget) and widget.dirty:
+                file_name = QFileInfo(widget.filePath).fileName()
+                unsaved_tabs.append(file_name)
+        
+        if unsaved_tabs:
+            # Show message about unsaved files
+            unsaved_files = "\
+".join(f"• {file}" for file in unsaved_tabs)
+            answer = QMessageBox.question(
+                self,
+                "Unsaved Changes",
+                f"The following files have unsaved changes:\
+\
+{unsaved_files}\
+\
+"
+                "Do you want to save them before closing the project?",
+                QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                QMessageBox.Save)
+            
+            if answer == QMessageBox.Cancel:
+                return
+            elif answer == QMessageBox.Save:
+                # Save all modified files
+                for i in range(self.tabs.count()):
+                    widget = self.tabs.widget(i)
+                    if isinstance(widget, EditorWidget) and widget.dirty:
+                        if not widget.save():
+                            # If save fails, cancel closing
+                            return
+        
+        # Temporarily show docks to save their correct dimensions
+        project_was_visible = self.project_dock.isVisible()
+        search_was_visible = self.search_dock.isVisible()
+        bdd_was_visible = self.bdd_mind_map_dock.isVisible()
+        
+        # Save dock dimensions before cleanup
+        if not project_was_visible:
+            self.project_dock.show()
+        if not search_was_visible:
+            self.search_dock.show()
+        if not bdd_was_visible:
+            self.bdd_mind_map_dock.show()
+        
+        # Force update of the UI to ensure dimensions are correct
+        from PySide6.QtWidgets import QApplication
+        QApplication.processEvents()
+        
+        # Stop index manager
+        try:
+            self.index_manager.stop_file_watcher()
+        except:
+            pass  # Ignore errors during cleanup
+        
+        # Save workspace with correct dock dimensions
+        self.workspace_manager.save_workspace(self)
+        
+        # Restore original visibility state before closing
+        if not project_was_visible:
+            self.project_dock.hide()
+        if not search_was_visible:
+            self.search_dock.hide()
+        if not bdd_was_visible:
+            self.bdd_mind_map_dock.hide()
+        
+        # Close the main window and show project selection page
+        from teshi.views.project_select_page import ProjectSelectPage
+        
+        # Create and show project selection page
+        self.project_select_page = ProjectSelectPage()
+        self.project_select_page.show()
+        
+        # Close the main window
+        self.close()
+
     def _setup_layout(self):
         # Main Widget
         main_widget = QWidget()
@@ -210,6 +299,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.tabs)
         self.tabs.tabCloseRequested.connect(self._close_tab_requested)
         self.tabs.currentChanged.connect(self._on_tab_changed)
+        # Enable context menu on tabs
+        self.tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tabs.customContextMenuRequested.connect(self._show_tab_context_menu)
         self.explorer.file_open_requested.connect(self.open_file_in_tab)
         self.explorer.state_changed.connect(self.workspace_manager.trigger_save)
 
@@ -343,6 +435,60 @@ class MainWindow(QMainWindow):
             self._do_update_mind_map()
             # Trigger workspace save
             self.workspace_manager.trigger_save()
+    
+    def _show_tab_context_menu(self, position):
+        """Show context menu for tabs"""
+        # Get the tab at the click position
+        tab_bar = self.tabs.tabBar()
+        tab_index = tab_bar.tabAt(position)
+        
+        if tab_index == -1:
+            return  # Click was not on a tab
+        
+        self._context_tab_index = tab_index
+        
+        # Create context menu
+        menu = QMenu(self)
+        
+        # Close action
+        close_action = menu.addAction("Close")
+        close_action.triggered.connect(self._close_context_tab)
+        
+        # Close Other Tabs action
+        close_others_action = menu.addAction("Close Other Tabs")
+        close_others_action.triggered.connect(self._close_other_tabs)
+        
+        # Close All Tabs action
+        close_all_action = menu.addAction("Close All Tabs")
+        close_all_action.triggered.connect(self._close_all_tabs)
+        
+        # Show menu
+        menu.exec_(tab_bar.mapToGlobal(position))
+    
+    def _close_context_tab(self):
+        """Close the tab that was right-clicked"""
+        if hasattr(self, '_context_tab_index'):
+            self._close_tab_requested(self._context_tab_index)
+    
+    def _close_other_tabs(self):
+        """Close all tabs except the one that was right-clicked"""
+        if not hasattr(self, '_context_tab_index'):
+            return
+        
+        # Get the tab to keep
+        keep_index = self._context_tab_index
+        
+        # Close all other tabs
+        # We need to close from highest index to lowest to avoid index changes
+        for i in range(self.tabs.count() - 1, -1, -1):
+            if i != keep_index:
+                self._close_tab_requested(i)
+    
+    def _close_all_tabs(self):
+        """Close all tabs"""
+        # Close all tabs from highest index to lowest
+        for i in range(self.tabs.count() - 1, -1, -1):
+            self._close_tab_requested(i)
     
     def _schedule_mind_map_update(self):
         """Schedule a mind map update (with debouncing)"""
