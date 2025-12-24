@@ -5,6 +5,8 @@ from PySide6.QtGui import QFont, QPalette, QColor
 from typing import List, Dict, Optional
 import re
 
+from teshi.utils.keyword_highlighter import KeywordHighlighter
+
 
 class BDDStepWidget(QFrame):
     """Single BDD step widget with styling"""
@@ -173,6 +175,10 @@ class BDDViewWidget(QWidget):
         super().__init__(parent)
         self.scenarios = []
         self.is_dark_theme = True
+        
+        # Initialize keyword highlighter
+        self.keyword_highlighter = KeywordHighlighter()
+        
         self._setup_ui()
         self._setup_styles()
     
@@ -710,3 +716,117 @@ class BDDViewWidget(QWidget):
     def get_scenario_count(self) -> int:
         """Get the number of scenarios"""
         return len(self.scenarios)
+    
+    # Keyword highlighting methods
+    def set_highlight_keywords(self, keywords: list):
+        """Set the list of keywords to highlight"""
+        self.keyword_highlighter.set_keywords(keywords)
+        if not keywords:
+            # If no keywords, clear all highlighting
+            self._clear_all_highlighting()
+        else:
+            # Apply highlighting
+            self._apply_keyword_highlighting()
+    
+    def add_highlight_keyword(self, keyword: str):
+        """Add a single keyword for highlighting"""
+        self.keyword_highlighter.add_keyword(keyword)
+        self._apply_keyword_highlighting()
+    
+    def remove_highlight_keyword(self, keyword: str):
+        """Remove keyword highlighting"""
+        self.keyword_highlighter.remove_keyword(keyword)
+        self._apply_keyword_highlighting()
+    
+    def clear_highlight_keywords(self):
+        """Clear all keyword highlighting"""
+        self.keyword_highlighter.clear_keywords()
+        self._apply_keyword_highlighting()
+    
+    def set_highlight_color(self, color: QColor):
+        """Set highlight color"""
+        self.keyword_highlighter.set_highlight_color(color)
+        self._apply_keyword_highlighting()
+    
+    def get_highlight_keywords(self) -> list:
+        """Get the current list of keywords"""
+        return self.keyword_highlighter.keywords.copy()
+    
+    def _apply_keyword_highlighting(self):
+        """Apply keyword highlighting in BDD view"""
+        # Iterate through all scenarios and steps, apply or clear highlighting
+        for i in range(self.container_layout.count()):
+            item = self.container_layout.itemAt(i)
+            widget = item.widget()
+            
+            if isinstance(widget, BDDScenarioWidget):
+                self._highlight_scenario_widget(widget)
+    
+    def _clear_all_highlighting(self):
+        """Clear all highlighting, restore plain text"""
+        for i in range(self.container_layout.count()):
+            item = self.container_layout.itemAt(i)
+            widget = item.widget()
+            
+            if isinstance(widget, BDDScenarioWidget):
+                self._clear_scenario_highlighting(widget)
+    
+    def _clear_scenario_highlighting(self, scenario_widget):
+        """Clear highlighting for a single scenario"""
+        # Find scenario title
+        for child in scenario_widget.findChildren(QLabel, "scenarioTitle"):
+            from PySide6.QtGui import QTextDocument
+            doc = QTextDocument()
+            doc.setHtml(child.text())
+            plain_text = doc.toPlainText()
+            child.setTextFormat(Qt.PlainText)  # Restore plain text
+            child.setText(plain_text)
+        
+        # Find step content
+        for step_widget in scenario_widget.findChildren(BDDStepWidget):
+            self._clear_step_highlighting(step_widget)
+    
+    def _clear_step_highlighting(self, step_widget):
+        """Clear highlighting for a single step"""
+        for child in step_widget.findChildren(QLabel, "stepContent"):
+            if hasattr(child, 'text'):
+                from PySide6.QtGui import QTextDocument
+                doc = QTextDocument()
+                doc.setHtml(child.text())
+                plain_text = doc.toPlainText()
+                child.setTextFormat(Qt.PlainText)  # Restore plain text
+                child.setText(plain_text)
+    
+    def _highlight_scenario_widget(self, scenario_widget):
+        """Apply keyword highlighting to a single scenario widget"""
+        # Find scenario title
+        for child in scenario_widget.findChildren(QLabel, "scenarioTitle"):
+            original_text = child.text()
+            # Remove previous HTML tags
+            from PySide6.QtGui import QTextDocument
+            doc = QTextDocument()
+            doc.setHtml(original_text)
+            plain_text = doc.toPlainText()
+            
+            highlighted_text = self.keyword_highlighter.highlight_html_content(plain_text)
+            child.setTextFormat(Qt.RichText)  # Enable rich text
+            child.setText(highlighted_text)
+        
+        # Find step content
+        for step_widget in scenario_widget.findChildren(BDDStepWidget):
+            self._highlight_step_widget(step_widget)
+    
+    def _highlight_step_widget(self, step_widget):
+        """Apply keyword highlighting to a single step widget"""
+        for child in step_widget.findChildren(QLabel, "stepContent"):
+            if hasattr(child, 'text'):
+                original_text = child.text()
+                # Remove previous HTML tags
+                from PySide6.QtGui import QTextDocument
+                doc = QTextDocument()
+                doc.setHtml(original_text)
+                plain_text = doc.toPlainText()
+                
+                highlighted_text = self.keyword_highlighter.highlight_html_content(plain_text)
+                child.setTextFormat(Qt.RichText)  # Enable rich text
+                child.setText(highlighted_text)

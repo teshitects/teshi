@@ -56,6 +56,10 @@ class MainWindow(QMainWindow):
         
         # Restore workspace state
         self.workspace_manager.restore_workspace(self)
+        
+        # Set default highlight color to yellow
+        from PySide6.QtGui import QColor
+        self.set_highlight_color(QColor(255, 255, 0))
 
 
 
@@ -76,6 +80,17 @@ class MainWindow(QMainWindow):
         file_menu.addAction(close_project_action)
         close_project_action.triggered.connect(self._close_project)
 
+        # View Menu
+        view_menu = menubar.addMenu("View")
+        
+        view_menu.addSeparator()
+        
+        # Clear highlighting action
+        clear_highlight_action = QAction("Clear Highlighting", self)
+        clear_highlight_action.setShortcut(Qt.CTRL | Qt.SHIFT | Qt.Key_H)
+        view_menu.addAction(clear_highlight_action)
+        clear_highlight_action.triggered.connect(self.clear_highlight_keywords)
+
         # Help Menu
         help_menu = menubar.addMenu("Help")
         about_action = QAction("About", self)
@@ -86,6 +101,8 @@ class MainWindow(QMainWindow):
         from teshi.views.widgets.about_dialog import AboutDialog
         about_dialog = AboutDialog()
         about_dialog.exec()
+    
+
 
     def _initialize_testcase_index(self):
         """Initialize test case index in background"""
@@ -266,6 +283,8 @@ class MainWindow(QMainWindow):
         self.search_results = SearchResultsDock(self.index_manager)
         self.search_results.file_open_requested.connect(self.open_file_in_tab)
         self.search_results.state_changed.connect(self.workspace_manager.trigger_save)
+        # Connect search text changes to keyword highlighting
+        self.search_results.search_edit.textChanged.connect(self._on_search_text_changed)
         self.search_dock.setWidget(self.search_results)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.search_dock)
         self.search_dock.hide()
@@ -289,6 +308,9 @@ class MainWindow(QMainWindow):
         action_bdd.triggered.connect(lambda: self.toggle_dock(self.bdd_mind_map_dock))
         self.bdd_mind_map_dock = QDockWidget("BDD Mind Map", self)
         self.bdd_mind_map = BDDMindMapDock(self.project_path)
+        # Set default highlight color to yellow for mind map
+        from PySide6.QtGui import QColor
+        self.bdd_mind_map.set_highlight_color(QColor(255, 255, 0))  # Yellow background
         self.bdd_mind_map_dock.setWidget(self.bdd_mind_map)
         self.addDockWidget(Qt.RightDockWidgetArea, self.bdd_mind_map_dock)
         self.bdd_mind_map_dock.hide()
@@ -393,6 +415,10 @@ class MainWindow(QMainWindow):
         
         # Connect to global BDD mode changes
         self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
+        
+        # Set default highlight color to yellow
+        from PySide6.QtGui import QColor
+        editor.set_highlight_color(QColor(255, 255, 0))  # Yellow background
         
         # Apply current global BDD mode state (with deferred conversion if suppressing updates)
         if suppress_updates or self._suppress_updates:
@@ -601,3 +627,93 @@ class MainWindow(QMainWindow):
             print(f"Error saving workspace: {e}")
         
         event.accept()
+    
+    # Keyword highlighting methods for all editor tabs
+    def set_highlight_keywords(self, keywords: list):
+        """设置所有打开的编辑器标签页的关键字高亮"""
+        # Apply to all editor tabs
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.set_highlight_keywords(keywords)
+        
+        # Apply to BDD mind map
+        if hasattr(self, 'bdd_mind_map'):
+            self.bdd_mind_map.set_highlight_keywords(keywords)
+    
+    def add_highlight_keyword(self, keyword: str):
+        """为所有编辑器添加单个关键字高亮"""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.add_highlight_keyword(keyword)
+        
+        # Apply to BDD mind map
+        if hasattr(self, 'bdd_mind_map'):
+            self.bdd_mind_map.add_highlight_keyword(keyword)
+    
+    def remove_highlight_keyword(self, keyword: str):
+        """从所有编辑器移除关键字高亮"""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.remove_highlight_keyword(keyword)
+        
+        # Apply to BDD mind map
+        if hasattr(self, 'bdd_mind_map'):
+            self.bdd_mind_map.remove_highlight_keyword(keyword)
+    
+    def clear_highlight_keywords(self):
+        """清除所有编辑器的关键字高亮"""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.clear_highlight_keywords()
+        
+        # Apply to BDD mind map
+        if hasattr(self, 'bdd_mind_map'):
+            self.bdd_mind_map.clear_highlight_keywords()
+    
+    def set_highlight_color(self, color):
+        """设置所有编辑器的高亮颜色"""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                widget.set_highlight_color(color)
+        
+        # Apply to BDD mind map
+        if hasattr(self, 'bdd_mind_map'):
+            self.bdd_mind_map.set_highlight_color(color)
+    
+    def _on_search_text_changed(self):
+        """Handle search text changes and automatically apply keyword highlighting"""
+        from PySide6.QtGui import QColor
+        search_text = self.search_results.search_edit.text().strip()
+        
+        if search_text:
+            # If there is search text, split keywords by space and comma
+            import re
+            # Use regex to split keywords, supporting space and comma separation
+            keywords = re.split(r'[,，\s]+', search_text)
+            # Filter empty strings
+            keywords = [kw.strip() for kw in keywords if kw.strip()]
+            
+            if keywords:
+                # Set default yellow highlight
+                self.set_highlight_color(QColor(255, 255, 0))
+                # Apply keyword highlighting
+                self.set_highlight_keywords(keywords)
+                self.show_message(f"Highlighting keywords: {', '.join(keywords)}", 2000)
+            else:
+                self.clear_highlight_keywords()
+        else:
+            # If search box is empty, clear highlighting
+            self.clear_highlight_keywords()
+    
+    def get_highlight_keywords(self) -> list:
+        """Get current keyword list (from the first editor)"""
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                return widget.get_highlight_keywords()
+        return []

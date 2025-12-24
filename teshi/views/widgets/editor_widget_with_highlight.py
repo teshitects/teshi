@@ -28,8 +28,6 @@ class EditorWidget(QWidget):
         self.load()
 
         self.text_edit.document().modificationChanged.connect(self._on_modification_changed)
-        # Connect text change to reapply highlighting
-        self.text_edit.textChanged.connect(self._on_text_changed)
 
     def _setup_ui(self):
         """Setup UI layout"""
@@ -77,23 +75,6 @@ class EditorWidget(QWidget):
 
     def _on_modification_changed(self, changed: bool):
         self.modifiedChanged.emit(changed)
-    
-    def _on_text_changed(self):
-        """Handle text change - reapply highlighting in text mode"""
-        if not self._is_bdd_mode and self.keyword_highlighter.keywords:
-            # Use a timer to avoid performance issues during typing
-            if not hasattr(self, '_highlight_timer'):
-                from PySide6.QtCore import QTimer
-                self._highlight_timer = QTimer()
-                self._highlight_timer.setSingleShot(True)
-                self._highlight_timer.timeout.connect(self._delayed_highlight)
-            
-            self._highlight_timer.start(300)  # 300ms delay
-    
-    def _delayed_highlight(self):
-        """Apply highlighting after delay"""
-        if not self._is_bdd_mode:
-            self._apply_highlighting()
     
     def _toggle_bdd_mode(self):
         """Toggle between standard and BDD format"""

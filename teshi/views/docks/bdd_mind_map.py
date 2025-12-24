@@ -10,6 +10,7 @@ from PySide6.QtCore import Qt, Signal, QPointF, QRectF, QTimer, QPropertyAnimati
 from PySide6.QtGui import QPen, QBrush, QColor, QFont, QPainter, QWheelEvent, QRadialGradient
 
 from teshi.utils.bdd_converter import BDDConverter
+from teshi.utils.keyword_highlighter import KeywordHighlighter
 
 
 class BDDNodeItem(QGraphicsEllipseItem):
@@ -131,6 +132,9 @@ class BDDMindMapView(QGraphicsView):
         # Layout parameters - 更紧凑的布局
         self.level_height = 80  # 垂直间距
         self.node_spacing = 120  # 水平间距
+        
+        # Initialize keyword highlighter
+        self.keyword_highlighter = KeywordHighlighter()
 
         # Zoom control
         self._scale_factor = 1.0
@@ -216,6 +220,157 @@ class BDDMindMapView(QGraphicsView):
         """Clear graphics"""
         self.scene.clear()
         self.nodes.clear()
+    
+    # Keyword highlighting methods
+    def set_highlight_keywords(self, keywords: list):
+        """Set the list of keywords to highlight"""
+        self.keyword_highlighter.set_keywords(keywords)
+        self._apply_keyword_highlighting()
+    
+    def add_highlight_keyword(self, keyword: str):
+        """Add a single keyword for highlighting"""
+        self.keyword_highlighter.add_keyword(keyword)
+        self._apply_keyword_highlighting()
+    
+    def remove_highlight_keyword(self, keyword: str):
+        """Remove keyword highlighting"""
+        self.keyword_highlighter.remove_keyword(keyword)
+        self._apply_keyword_highlighting()
+    
+    def clear_highlight_keywords(self):
+        """Clear all keyword highlighting"""
+        self.keyword_highlighter.clear_keywords()
+        self._apply_keyword_highlighting()
+    
+    def set_highlight_color(self, color):
+        """Set highlight color"""
+        self.keyword_highlighter.set_highlight_color(color)
+        self._apply_keyword_highlighting()
+    
+    def get_highlight_keywords(self) -> list:
+        """Get the current list of keywords"""
+        return self.keyword_highlighter.keywords.copy()
+    
+    def _apply_keyword_highlighting(self):
+        """Apply keyword highlighting in the mind map"""
+        if not self.keyword_highlighter.keywords:
+            # Clear all highlighting, restore default style
+            self._clear_node_highlighting()
+            return
+        
+        print(f"Applying keyword highlighting for keywords: {self.keyword_highlighter.keywords}")
+        print(f"Total nodes to process: {len(self.nodes)}")
+        
+        # Iterate through all nodes, apply highlighting
+        for node_id, node in self.nodes.items():
+            self._apply_node_highlighting(node)
+    
+    def _clear_node_highlighting(self):
+        """Clear all node highlighting"""
+        for node_id, node in self.nodes.items():
+            # Restore default style
+            self._set_node_default_style(node)
+    
+    def _apply_node_highlighting(self, node):
+        """Apply keyword highlighting to a single node"""
+        if not isinstance(node, BDDNodeItem):
+            return
+            
+        node_title = node.title
+        node_content = node.content
+        
+        # Check if title or content contains keywords
+        text_to_check = f"{node_title} {node_content}"
+        has_keyword = any(keyword.lower() in text_to_check.lower() for keyword in self.keyword_highlighter.keywords)
+        
+        print(f"Node '{node_title}' - has_keyword: {has_keyword}, checking in: '{text_to_check}'")
+        
+        if has_keyword:
+            # Apply highlight style
+            self._set_node_highlight_style(node)
+            print(f"Applied highlight style to node '{node_title}'")
+        else:
+            # Restore default style
+            self._set_node_default_style(node)
+    
+    def _set_node_default_style(self, node):
+        """Set the default style for the node"""
+        if not isinstance(node, BDDNodeItem):
+            return
+            
+        node_colors = {
+            'scenario': QColor(76, 175, 80),      # Green
+            'given': QColor(33, 150, 243),        # Blue  
+            'when': QColor(255, 152, 0),         # Orange
+            'then': QColor(156, 39, 176),        # Purple
+            'notes': QColor(158, 158, 158)        # Gray
+        }
+        
+        color = node_colors.get(node.node_type, QColor(100, 100, 100))
+        
+        # Set default colors and style
+        node.setBrush(QBrush(color))
+        node.setPen(QPen(QColor(255, 255, 255), 2))
+        
+        # Update text style - use plain text, not HTML
+        if hasattr(node, 'text_item'):
+            node.text_item.setPlainText(node.title)  # Use plain text
+            node.text_item.setDefaultTextColor(Qt.white)
+            font = node.text_item.font()
+            font.setBold(False)
+            node.text_item.setFont(font)
+    
+    def _set_node_highlight_style(self, node):
+        """Set the highlight style for the node text"""
+        if not isinstance(node, BDDNodeItem):
+            return
+        
+        # Keep the node's default color style
+        node_colors = {
+            'scenario': QColor(76, 175, 80),      # Green
+            'given': QColor(33, 150, 243),        # Blue  
+            'when': QColor(255, 152, 0),         # Orange
+            'then': QColor(156, 39, 176),        # Purple
+            'notes': QColor(158, 158, 158)        # Gray
+        }
+        
+        color = node_colors.get(node.node_type, QColor(100, 100, 100))
+        node.setBrush(QBrush(color))
+        node.setPen(QPen(QColor(255, 255, 255), 2))
+        
+        # Get highlight color
+        bg_color = self.keyword_highlighter.highlight_format.background().color()
+        fg_color = self.keyword_highlighter.highlight_format.foreground().color()
+        
+        # Update text style - by building rich text to highlight keywords
+        if hasattr(node, 'text_item'):
+            original_text = node.title
+            
+            # Use HTML to build highlighted text
+            highlighted_html = self._build_highlighted_html(original_text, bg_color, fg_color)
+            node.text_item.setHtml(highlighted_html)
+            
+            font = node.text_item.font()
+            font.setBold(True)  # Bold
+            node.text_item.setFont(font)
+    
+    def _build_highlighted_html(self, text: str, bg_color: QColor, fg_color: QColor) -> str:
+        """Build HTML text with highlighting"""
+        if not self.keyword_highlighter.keywords:
+            return f'<span style="color: white;">{text}</span>'
+        
+        # Highlight each keyword
+        highlighted_text = text
+        color_style = f'background-color: rgb({bg_color.red()}, {bg_color.green()}, {bg_color.blue()}); color: rgb({fg_color.red()}, {fg_color.green()}, {fg_color.blue()}); padding: 1px; border-radius: 2px; font-weight: bold;'
+        
+        for keyword in self.keyword_highlighter.keywords:
+            import re
+            # Use regex for case-insensitive replacement
+            pattern = re.compile(f'({re.escape(keyword)})', re.IGNORECASE)
+            replacement = f'<span style="{color_style}">\\1</span>'
+            highlighted_text = pattern.sub(replacement, highlighted_text)
+        
+        return f'<span style="color: white;">{highlighted_text}</span>'
         self.connections.clear()
 
     def add_bdd_scenario(self, scenario_data: dict, scenario_index: int):
@@ -361,6 +516,9 @@ class BDDMindMapDock(QWidget):
         self.project_path = project_path
         self.bdd_converter = BDDConverter()
         self.current_scenarios = []
+        
+        # Initialize keyword highlighter
+        self.keyword_highlighter = KeywordHighlighter()
 
         self._setup_ui()
         self._setup_connections()
@@ -593,5 +751,37 @@ class BDDMindMapDock(QWidget):
         except Exception as e:
             # Don't clear scenarios on error to avoid flickering
             self.status_label.setText(f"Parse error: {str(e)}")
+    
+    # Keyword highlighting methods - delegate to mind_map_view
+    def set_highlight_keywords(self, keywords: list):
+        """设置要高亮的关键字列表"""
+        if hasattr(self.mind_map_view, 'set_highlight_keywords'):
+            self.mind_map_view.set_highlight_keywords(keywords)
+    
+    def add_highlight_keyword(self, keyword: str):
+        """添加单个关键字进行高亮"""
+        if hasattr(self.mind_map_view, 'add_highlight_keyword'):
+            self.mind_map_view.add_highlight_keyword(keyword)
+    
+    def remove_highlight_keyword(self, keyword: str):
+        """移除关键字高亮"""
+        if hasattr(self.mind_map_view, 'remove_highlight_keyword'):
+            self.mind_map_view.remove_highlight_keyword(keyword)
+    
+    def clear_highlight_keywords(self):
+        """清除所有关键字高亮"""
+        if hasattr(self.mind_map_view, 'clear_highlight_keywords'):
+            self.mind_map_view.clear_highlight_keywords()
+    
+    def set_highlight_color(self, color):
+        """设置高亮颜色"""
+        if hasattr(self.mind_map_view, 'set_highlight_color'):
+            self.mind_map_view.set_highlight_color(color)
+    
+    def get_highlight_keywords(self) -> list:
+        """获取当前的关键字列表"""
+        if hasattr(self.mind_map_view, 'get_highlight_keywords'):
+            return self.mind_map_view.get_highlight_keywords()
+        return []
 
 
