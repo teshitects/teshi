@@ -261,6 +261,10 @@ class BDDMindMapView(QGraphicsView):
         print(f"Applying keyword highlighting for keywords: {self.keyword_highlighter.keywords}")
         print(f"Total nodes to process: {len(self.nodes)}")
         
+        if len(self.nodes) == 0:
+            print("No nodes in mind map - nothing to highlight")
+            return
+        
         # Iterate through all nodes, apply highlighting
         for node_id, node in self.nodes.items():
             self._apply_node_highlighting(node)
@@ -644,13 +648,16 @@ class BDDMindMapDock(QWidget):
 
     def update_mind_map(self):
         """Update mind map"""
+        print(f"update_mind_map called with {len(self.current_scenarios)} scenarios")
         self.mind_map_view.clear_graph()
 
         for i, scenario in enumerate(self.current_scenarios):
+            print(f"Adding scenario {i}: {scenario.get('title', 'No title')}")
             self.mind_map_view.add_bdd_scenario(scenario, i)
 
         # Update node count
         node_count = len(self.mind_map_view.nodes)
+        print(f"Total nodes created: {node_count}")
         self.node_count_label.setText(f"Nodes: {node_count}")
 
         # Auto layout
@@ -722,6 +729,9 @@ class BDDMindMapDock(QWidget):
     def load_bdd_from_content(self, file_path: str, content: str):
         """Load BDD data from file content directly"""
         try:
+            print(f"load_bdd_from_content called with file_path: {file_path}")
+            print(f"Content length: {len(content) if content else 0}")
+            
             if not file_path or not file_path.endswith('.md'):
                 self.current_scenarios = []
                 self.update_mind_map()
@@ -736,9 +746,11 @@ class BDDMindMapDock(QWidget):
 
             # Convert to BDD format
             bdd_content = self.bdd_converter.convert_to_bdd(content)
+            print(f"BDD content: {bdd_content[:200]}...")
 
             # Parse BDD scenarios
             scenarios = self.bdd_converter._parse_bdd_scenarios(bdd_content)
+            print(f"Parsed {len(scenarios)} scenarios")
             
             self.current_scenarios = scenarios
             self.update_mind_map()
@@ -755,8 +767,12 @@ class BDDMindMapDock(QWidget):
     # Keyword highlighting methods - delegate to mind_map_view
     def set_highlight_keywords(self, keywords: list):
         """设置要高亮的关键字列表"""
+        print(f"BDDMindMapDock.set_highlight_keywords called with: {keywords}")
         if hasattr(self.mind_map_view, 'set_highlight_keywords'):
+            print(f"Calling mind_map_view.set_highlight_keywords with {keywords}")
             self.mind_map_view.set_highlight_keywords(keywords)
+        else:
+            print("mind_map_view does not have set_highlight_keywords method")
     
     def add_highlight_keyword(self, keyword: str):
         """添加单个关键字进行高亮"""

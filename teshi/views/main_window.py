@@ -401,6 +401,8 @@ class MainWindow(QMainWindow):
                 # Only switch to the tab if not suppressing updates
                 if not suppress_updates and not self._suppress_updates:
                     self.tabs.setCurrentIndex(i)
+                    # Apply current search highlighting when switching to existing tab
+                    self._apply_current_search_highlighting()
                 return
 
         editor = EditorWidget(path)
@@ -432,6 +434,8 @@ class MainWindow(QMainWindow):
         # Only set as current widget if not suppressing updates
         if not suppress_updates and not self._suppress_updates:
             self.tabs.setCurrentWidget(editor)
+            # Apply current search highlighting to newly opened tab
+            self._apply_current_search_highlighting()
         
         # Update mind map for newly opened file (only if not suppressed)
         if not suppress_updates and not self._suppress_updates:
@@ -628,6 +632,38 @@ class MainWindow(QMainWindow):
         
         event.accept()
     
+    def _set_highlight_keywords_current_tab(self, keywords: list):
+        """设置当前活动编辑器标签页的关键字高亮"""
+        current_widget = self.tabs.currentWidget()
+        if isinstance(current_widget, EditorWidget):
+            current_widget.set_highlight_keywords(keywords)
+    
+    def _clear_highlight_keywords_current_tab(self):
+        """清除当前活动编辑器标签页的关键字高亮"""
+        current_widget = self.tabs.currentWidget()
+        if isinstance(current_widget, EditorWidget):
+            current_widget.clear_highlight_keywords()
+    
+    def _apply_current_search_highlighting(self):
+        """应用当前搜索框的关键字高亮到当前tab"""
+        search_text = self.search_results.search_edit.text().strip()
+        
+        if search_text:
+            # If there is search text, split keywords by space and comma
+            import re
+            # Use regex to split keywords, supporting space and comma separation
+            keywords = re.split(r'[,，\s]+', search_text)
+            # Filter empty strings
+            keywords = [kw.strip() for kw in keywords if kw.strip()]
+            
+            if keywords:
+                # Set default yellow highlight
+                from PySide6.QtGui import QColor
+                current_widget = self.tabs.currentWidget()
+                if isinstance(current_widget, EditorWidget):
+                    current_widget.set_highlight_color(QColor(255, 255, 0))
+                    current_widget.set_highlight_keywords(keywords)
+    
     # Keyword highlighting methods for all editor tabs
     def set_highlight_keywords(self, keywords: list):
         """设置所有打开的编辑器标签页的关键字高亮"""
@@ -686,9 +722,12 @@ class MainWindow(QMainWindow):
             self.bdd_mind_map.set_highlight_color(color)
     
     def _on_search_text_changed(self):
-        """Handle search text changes and automatically apply keyword highlighting"""
+        """Handle search text changes and automatically apply keyword highlighting to current tab only"""
         from PySide6.QtGui import QColor
         search_text = self.search_results.search_edit.text().strip()
+        
+        # Get current active tab
+        current_widget = self.tabs.currentWidget()
         
         if search_text:
             # If there is search text, split keywords by space and comma
@@ -701,14 +740,21 @@ class MainWindow(QMainWindow):
             if keywords:
                 # Set default yellow highlight
                 self.set_highlight_color(QColor(255, 255, 0))
-                # Apply keyword highlighting
-                self.set_highlight_keywords(keywords)
+                # Apply keyword highlighting only to current tab
+                self._set_highlight_keywords_current_tab(keywords)
+                # Also apply to BDD mind map
+                if hasattr(self, 'bdd_mind_map'):
+                    self.bdd_mind_map.set_highlight_keywords(keywords)
                 self.show_message(f"Highlighting keywords: {', '.join(keywords)}", 2000)
             else:
-                self.clear_highlight_keywords()
+                self._clear_highlight_keywords_current_tab()
+                if hasattr(self, 'bdd_mind_map'):
+                    self.bdd_mind_map.clear_highlight_keywords()
         else:
-            # If search box is empty, clear highlighting
-            self.clear_highlight_keywords()
+            # If search box is empty, clear highlighting for current tab only
+            self._clear_highlight_keywords_current_tab()
+            if hasattr(self, 'bdd_mind_map'):
+                self.bdd_mind_map.clear_highlight_keywords()
     
     def get_highlight_keywords(self) -> list:
         """Get current keyword list (from the first editor)"""

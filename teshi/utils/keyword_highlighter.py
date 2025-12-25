@@ -61,6 +61,9 @@ class KeywordHighlighter:
         document = text_edit.document()
         cursor = QTextCursor(document)
         
+        # 保存当前的修改状态
+        was_modified = document.isModified()
+        
         # 清除之前的高亮
         cursor.select(QTextCursor.Document)
         cursor.setCharFormat(QTextCharFormat())
@@ -96,6 +99,9 @@ class KeywordHighlighter:
                 # 防止无限循环
                 if cursor.atEnd():
                     break
+        
+        # 恢复之前的修改状态，避免高亮操作触发修改标记
+        document.setModified(was_modified)
         
         return highlight_count
     
