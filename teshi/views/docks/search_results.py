@@ -217,7 +217,7 @@ class SearchResultsDock(QWidget):
         self.results_model.appendRow(root_item)
         
         # Expand tree to show results better
-        self.results_tree.expandToDepth(2)  # Expand a few levels to show results
+        self.results_tree.expandToDepth(20)  # Expand a few levels to show results
         
         # Update stats with result count
         self.stats_label.setText(f"Found {len(results)} test cases for '{query}'")
