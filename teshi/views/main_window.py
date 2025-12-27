@@ -47,6 +47,21 @@ class MainWindow(QMainWindow):
         self._mind_map_update_timer.setInterval(500)  # 500ms delay
         self._mind_map_update_timer.timeout.connect(self._do_update_mind_map)
         
+        # Track last updated content to avoid unnecessary updates
+        self._last_mind_map_content = None
+        self._last_mind_map_file = None
+        self._current_highlight_keywords = []  # Track current keywords for mind map updates
+        
+        # Debounce timer for search highlighting
+        self._search_highlight_timer = QTimer()
+        self._search_highlight_timer.setSingleShot(True)
+        self._search_highlight_timer.setInterval(200)  # 200ms debounce
+        self._search_highlight_timer.timeout.connect(self._apply_search_highlighting_debounced)
+        self._pending_search_keywords = None
+        
+        # Flag to prevent infinite loop between mind map updates and text changes
+        self._updating_mind_map = False
+        
         self._setup_menubar()
         self._setup_layout()
         self._setup_shortcuts()
@@ -383,6 +398,30 @@ class MainWindow(QMainWindow):
                     return
             elif answer == QMessageBox.Cancel:
                 return
+        
+        # Clean up resources properly
+        if isinstance(widget, EditorWidget):
+            # Disconnect signals to prevent memory leaks
+            if hasattr(widget, '_signal_connections'):
+                for signal, slot in widget._signal_connections:
+                    try:
+                        signal.disconnect(slot)
+                    except:
+                        pass
+                widget._signal_connections.clear()
+            
+            # Clean up highlighter
+            if hasattr(widget, 'highlighter'):
+                widget.highlighter.setDocument(None)
+                widget.highlighter.deleteLater()
+                widget.highlighter = None
+            
+            # Clean up editor's own timer
+            if hasattr(widget, '_highlight_timer'):
+                widget._highlight_timer.stop()
+                widget._highlight_timer.deleteLater()
+                delattr(widget, '_highlight_timer')
+        
         self.tabs.removeTab(index)
         widget.deleteLater()
         
@@ -406,7 +445,9 @@ class MainWindow(QMainWindow):
                 return
 
         editor = EditorWidget(path)
-        self.highlighter = MarkdownHighlighter(editor.text_edit.document())
+        # Store highlighter reference in editor widget for proper cleanup
+        from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
+        editor.highlighter = MarkdownHighlighter(editor.text_edit.document())
 
         editor.modifiedChanged.connect(
             lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
@@ -417,6 +458,13 @@ class MainWindow(QMainWindow):
         
         # Connect to global BDD mode changes
         self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
+        
+        # Store signal connections for cleanup
+        editor._signal_connections = [
+            (editor.modifiedChanged, lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)),
+            (editor.text_edit.textChanged, self._schedule_mind_map_update),
+            (self.global_bdd_mode_changed, editor.set_global_bdd_mode)
+        ]
         
         # Set default highlight color to yellow
         from PySide6.QtGui import QColor
@@ -455,6 +503,7 @@ class MainWindow(QMainWindow):
     
     def _on_tab_changed(self, index: int):
         """Handle tab change event"""
+        print(f"[MAIN] Tab changed to index {index}")
         # Activate pending BDD conversion if any
         current_widget = self.tabs.widget(index)
         if isinstance(current_widget, EditorWidget) and hasattr(current_widget, 'activate_if_pending'):
@@ -462,6 +511,9 @@ class MainWindow(QMainWindow):
         
         # Update mind map immediately when switching tabs (unless suppressed)
         if not self._suppress_updates:
+            # Clear content tracking to force update on tab change
+            self._last_mind_map_file = None
+            self._last_mind_map_content = None
             self._do_update_mind_map()
             # Trigger workspace save
             self.workspace_manager.trigger_save()
@@ -522,22 +574,52 @@ class MainWindow(QMainWindow):
     
     def _schedule_mind_map_update(self):
         """Schedule a mind map update (with debouncing)"""
-        # Skip if updates are suppressed
-        if self._suppress_updates:
+        # Skip if updates are suppressed or if we're already updating mind map
+        if self._suppress_updates or self._updating_mind_map:
             return
+        print("[MINDMAP] _schedule_mind_map_update called")
         # Restart the timer - this effectively debounces rapid text changes
         self._mind_map_update_timer.stop()
         self._mind_map_update_timer.start()
     
     def _do_update_mind_map(self):
         """Actually update the mind map"""
+        print("[MINDMAP] _do_update_mind_map executed")
         current_widget = self.tabs.currentWidget()
-        if isinstance(current_widget, EditorWidget):
+        if isinstance(current_widget, EditorWidget) and hasattr(self, 'bdd_mind_map') and self.bdd_mind_map:
             file_path = current_widget.filePath
             # Get current content from editor
             content = current_widget.toPlainText()
-            # Update mind map dock with current file content
-            self.bdd_mind_map.load_bdd_from_content(file_path, content)
+            
+            # Only update if content or file has changed
+            if (file_path != self._last_mind_map_file or 
+                content != self._last_mind_map_content):
+                
+                self._last_mind_map_file = file_path
+                self._last_mind_map_content = content
+                
+                print(f"[MINDMAP] Updating mind map for file: {file_path}")
+                
+                # Set flag to prevent infinite loop
+                self._updating_mind_map = True
+                
+                try:
+                    # Update mind map dock with current file content
+                    self.bdd_mind_map.load_bdd_from_content(file_path, content)
+                    
+                    # Only apply highlighting to current widget to avoid affecting other tabs
+                    if hasattr(self, '_current_highlight_keywords') and self._current_highlight_keywords:
+                        print(f"[MINDMAP] Applying highlighting to current tab only: {self._current_highlight_keywords}")
+                        current_widget.set_highlight_keywords(self._current_highlight_keywords)
+                    else:
+                        print(f"[MINDMAP] No keywords to highlight for current tab")
+                        
+                finally:
+                    # Always clear the flag, even if there's an error
+                    self._updating_mind_map = False
+                    print(f"[MINDMAP] Mind map update completed for {file_path}")
+        else:
+            print("[MINDMAP] Skipping mind map update - no changes")
     
     def _update_mind_map_for_current_file(self):
         """Update BDD mind map with current file content (immediate)"""
@@ -610,18 +692,54 @@ class MainWindow(QMainWindow):
         # Stop mind map update timer
         if hasattr(self, '_mind_map_update_timer'):
             self._mind_map_update_timer.stop()
+            self._mind_map_update_timer.deleteLater()
+        
+        # Stop search highlight timer
+        if hasattr(self, '_search_highlight_timer'):
+            self._search_highlight_timer.stop()
+            self._search_highlight_timer.deleteLater()
         
         # Stop delayed save timer
         self.workspace_manager.save_timer.stop()
         
         # Stop file watcher (this may take up to 1 second)
         if hasattr(self, 'index_manager'):
-            self.index_manager.stop_file_watcher()
+            self.index_manager.cleanup()
         
         # Stop background index thread if still running
         if hasattr(self, 'index_thread') and self.index_thread.isRunning():
             self.index_thread.terminate()
             self.index_thread.wait(1000)  # Wait up to 1 second
+        
+        # Disconnect all signals to prevent memory leaks
+        try:
+            # Disconnect tab widget signals
+            self.tabs.tabCloseRequested.disconnect()
+            self.tabs.currentChanged.disconnect()
+            
+            # Disconnect editor signals if any
+            for i in range(self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if hasattr(widget, 'textChanged'):
+                    try:
+                        widget.textChanged.disconnect()
+                    except:
+                        pass
+                if hasattr(widget, '_highlight_timer'):
+                    widget._highlight_timer.stop()
+                    widget._highlight_timer.deleteLater()
+            
+            # Disconnect search results signals and cleanup
+            if hasattr(self, 'search_results'):
+                try:
+                    self.search_results.file_selected.disconnect()
+                    self.search_results.cleanup()
+                except:
+                    pass
+            
+            print("Signals disconnected successfully")
+        except Exception as e:
+            print(f"Error disconnecting signals: {e}")
         
         # Save workspace synchronously but optimized for fast shutdown
         try:
@@ -636,6 +754,7 @@ class MainWindow(QMainWindow):
         """设置当前活动编辑器标签页的关键字高亮"""
         current_widget = self.tabs.currentWidget()
         if isinstance(current_widget, EditorWidget):
+            self._current_highlight_keywords = keywords
             current_widget.set_highlight_keywords(keywords)
     
     def _clear_highlight_keywords_current_tab(self):
@@ -667,6 +786,7 @@ class MainWindow(QMainWindow):
     # Keyword highlighting methods for all editor tabs
     def set_highlight_keywords(self, keywords: list):
         """设置所有打开的编辑器标签页的关键字高亮"""
+        self._current_highlight_keywords = keywords
         # Apply to all editor tabs
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
@@ -722,39 +842,62 @@ class MainWindow(QMainWindow):
             self.bdd_mind_map.set_highlight_color(color)
     
     def _on_search_text_changed(self):
-        """Handle search text changes and automatically apply keyword highlighting to current tab only"""
+        """Handle search text changes with debouncing"""
         from PySide6.QtGui import QColor
         search_text = self.search_results.search_edit.text().strip()
         
-        # Get current active tab
-        current_widget = self.tabs.currentWidget()
-        
+        # Store pending keywords and restart debounce timer
         if search_text:
-            # If there is search text, split keywords by space and comma
             import re
             # Use regex to split keywords, supporting space and comma separation
             keywords = re.split(r'[,，\s]+', search_text)
             # Filter empty strings
             keywords = [kw.strip() for kw in keywords if kw.strip()]
-            
-            if keywords:
-                # Set default yellow highlight
-                self.set_highlight_color(QColor(255, 255, 0))
-                # Apply keyword highlighting only to current tab
-                self._set_highlight_keywords_current_tab(keywords)
-                # Also apply to BDD mind map
-                if hasattr(self, 'bdd_mind_map'):
-                    self.bdd_mind_map.set_highlight_keywords(keywords)
-                self.show_message(f"Highlighting keywords: {', '.join(keywords)}", 2000)
-            else:
-                self._clear_highlight_keywords_current_tab()
-                if hasattr(self, 'bdd_mind_map'):
-                    self.bdd_mind_map.clear_highlight_keywords()
+            self._pending_search_keywords = keywords if keywords else None
         else:
-            # If search box is empty, clear highlighting for current tab only
+            self._pending_search_keywords = None
+        
+        # Restart debounce timer
+        self._search_highlight_timer.stop()
+        self._search_highlight_timer.start()
+    
+    def _apply_search_highlighting_debounced(self):
+        """Apply search highlighting after debounce"""
+        from PySide6.QtGui import QColor
+        
+        print(f"[SEARCH] _apply_search_highlighting_debounced with keywords: {self._pending_search_keywords}")
+        keywords = self._pending_search_keywords
+        
+        if keywords:
+            # Set default yellow highlight
+            self.set_highlight_color(QColor(255, 255, 0))
+            # Apply keyword highlighting only to current tab
+            self._set_highlight_keywords_current_tab(keywords)
+            # Also apply to BDD mind map (with error handling)
+            if hasattr(self, 'bdd_mind_map') and self.bdd_mind_map:
+                try:
+                    self.bdd_mind_map.set_highlight_keywords(keywords)
+                except RuntimeError as e:
+                    if "already deleted" in str(e):
+                        print("BDD mind map object deleted, skipping highlight")
+                    return
+                except Exception as e:
+                    print(f"Error applying BDD mind map highlight: {e}")
+                    return
+            self.show_message(f"Highlighting keywords: {', '.join(keywords)}", 2000)
+        else:
+            # Clear highlighting
             self._clear_highlight_keywords_current_tab()
-            if hasattr(self, 'bdd_mind_map'):
-                self.bdd_mind_map.clear_highlight_keywords()
+            if hasattr(self, 'bdd_mind_map') and self.bdd_mind_map:
+                try:
+                    self.bdd_mind_map.clear_highlight_keywords()
+                except RuntimeError as e:
+                    if "already deleted" in str(e):
+                        print("BDD mind map object deleted, skipping clear")
+                    return
+                except Exception as e:
+                    print(f"Error clearing BDD mind map highlight: {e}")
+                    return
     
     def get_highlight_keywords(self) -> list:
         """Get current keyword list (from the first editor)"""

@@ -217,9 +217,22 @@ class BDDMindMapView(QGraphicsView):
         self.translate(delta.x(), delta.y())
 
     def clear_graph(self):
-        """Clear graphics"""
+        """Clear graphics with proper memory cleanup"""
+        # Remove all items from scene with proper cleanup
+        items = self.scene.items()
+        for item in items:
+            if hasattr(item, 'connections'):
+                item.connections.clear()
+            self.scene.removeItem(item)
+            # Delete the item to free memory
+            item.deleteLater()
+        
+        # Clear scene
         self.scene.clear()
+        
+        # Clear references
         self.nodes.clear()
+        self.connections.clear()
     
     # Keyword highlighting methods
     def set_highlight_keywords(self, keywords: list):
@@ -271,83 +284,123 @@ class BDDMindMapView(QGraphicsView):
     
     def _clear_node_highlighting(self):
         """Clear all node highlighting"""
-        for node_id, node in self.nodes.items():
-            # Restore default style
-            self._set_node_default_style(node)
+        for node_id, node in list(self.nodes.items()):  # Use list() to avoid modification during iteration
+            # Check if node and its text_item are still valid
+            if node and hasattr(node, 'text_item') and node.text_item:
+                try:
+                    # Restore default style
+                    self._set_node_default_style(node)
+                except RuntimeError as e:
+                    # Object already deleted, remove from nodes dict
+                    if "already deleted" in str(e):
+                        self.nodes.pop(node_id, None)
+                    continue
+                except:
+                    # Other errors, skip this node
+                    continue
     
     def _apply_node_highlighting(self, node):
         """Apply keyword highlighting to a single node"""
         if not isinstance(node, BDDNodeItem):
             return
+        
+        # Check if node and its text_item are still valid
+        if not node or not hasattr(node, 'text_item') or not node.text_item:
+            return
             
-        node_title = node.title
-        node_content = node.content
-        
-        # Check if title or content contains keywords
-        text_to_check = f"{node_title} {node_content}"
-        has_keyword = any(keyword.lower() in text_to_check.lower() for keyword in self.keyword_highlighter.keywords)
-        
-        print(f"Node '{node_title}' - has_keyword: {has_keyword}, checking in: '{text_to_check}'")
-        
-        if has_keyword:
-            # Apply highlight style
-            self._set_node_highlight_style(node)
-            print(f"Applied highlight style to node '{node_title}'")
-        else:
-            # Restore default style
-            self._set_node_default_style(node)
+        try:
+            node_title = node.title
+            node_content = node.content
+            
+            # Check if title or content contains keywords
+            text_to_check = f"{node_title} {node_content}"
+            has_keyword = any(keyword.lower() in text_to_check.lower() for keyword in self.keyword_highlighter.keywords)
+            
+            print(f"Node '{node_title}' - has_keyword: {has_keyword}, checking in: '{text_to_check}'")
+            
+            if has_keyword:
+                # Apply highlight style
+                self._set_node_highlight_style(node)
+                print(f"Applied highlight style to node '{node_title}'")
+            else:
+                # Restore default style
+                self._set_node_default_style(node)
+        except RuntimeError as e:
+            # Object already deleted
+            if "already deleted" in str(e):
+                print(f"Node object already deleted, skipping highlight")
+            return
+        except:
+            # Other errors, skip this node
+            return
     
     def _set_node_default_style(self, node):
         """Set the default style for the node"""
         if not isinstance(node, BDDNodeItem):
             return
             
-        node_colors = {
-            'scenario': QColor(76, 175, 80),      # Green
-            'given': QColor(33, 150, 243),        # Blue  
-            'when': QColor(255, 152, 0),         # Orange
-            'then': QColor(156, 39, 176),        # Purple
-            'notes': QColor(158, 158, 158)        # Gray
-        }
-        
-        color = node_colors.get(node.node_type, QColor(100, 100, 100))
-        
-        # Set default colors and style
-        node.setBrush(QBrush(color))
-        node.setPen(QPen(QColor(255, 255, 255), 2))
-        
-        # Update text style - use plain text, not HTML
-        if hasattr(node, 'text_item'):
+        # Check if node and text_item are still valid
+        if not hasattr(node, 'text_item') or not node.text_item:
+            return
+            
+        try:
+            node_colors = {
+                'scenario': QColor(76, 175, 80),      # Green
+                'given': QColor(33, 150, 243),        # Blue  
+                'when': QColor(255, 152, 0),         # Orange
+                'then': QColor(156, 39, 176),        # Purple
+                'notes': QColor(158, 158, 158)        # Gray
+            }
+            
+            color = node_colors.get(node.node_type, QColor(100, 100, 100))
+            
+            # Set default colors and style
+            node.setBrush(QBrush(color))
+            node.setPen(QPen(QColor(255, 255, 255), 2))
+            
+            # Update text style - use plain text, not HTML
             node.text_item.setPlainText(node.title)  # Use plain text
             node.text_item.setDefaultTextColor(Qt.white)
             font = node.text_item.font()
             font.setBold(False)
             node.text_item.setFont(font)
+        except RuntimeError as e:
+            # Object already deleted
+            if "already deleted" in str(e):
+                print(f"Text item already deleted while setting default style")
+            return
+        except:
+            # Other errors, skip this node
+            return
     
     def _set_node_highlight_style(self, node):
         """Set the highlight style for the node text"""
         if not isinstance(node, BDDNodeItem):
             return
-        
-        # Keep the node's default color style
-        node_colors = {
-            'scenario': QColor(76, 175, 80),      # Green
-            'given': QColor(33, 150, 243),        # Blue  
-            'when': QColor(255, 152, 0),         # Orange
-            'then': QColor(156, 39, 176),        # Purple
-            'notes': QColor(158, 158, 158)        # Gray
-        }
-        
-        color = node_colors.get(node.node_type, QColor(100, 100, 100))
-        node.setBrush(QBrush(color))
-        node.setPen(QPen(QColor(255, 255, 255), 2))
-        
-        # Get highlight color
-        bg_color = self.keyword_highlighter.highlight_format.background().color()
-        fg_color = self.keyword_highlighter.highlight_format.foreground().color()
-        
-        # Update text style - by building rich text to highlight keywords
-        if hasattr(node, 'text_item'):
+            
+        # Check if node and text_item are still valid
+        if not hasattr(node, 'text_item') or not node.text_item:
+            return
+            
+        try:
+            # Keep the node's default color style
+            node_colors = {
+                'scenario': QColor(76, 175, 80),      # Green
+                'given': QColor(33, 150, 243),        # Blue  
+                'when': QColor(255, 152, 0),         # Orange
+                'then': QColor(156, 39, 176),        # Purple
+                'notes': QColor(158, 158, 158)        # Gray
+            }
+            
+            color = node_colors.get(node.node_type, QColor(100, 100, 100))
+            node.setBrush(QBrush(color))
+            node.setPen(QPen(QColor(255, 255, 255), 2))
+            
+            # Get highlight color
+            bg_color = self.keyword_highlighter.highlight_format.background().color()
+            fg_color = self.keyword_highlighter.highlight_format.foreground().color()
+            
+            # Update text style - by building rich text to highlight keywords
             original_text = node.title
             
             # Use HTML to build highlighted text
@@ -357,6 +410,14 @@ class BDDMindMapView(QGraphicsView):
             font = node.text_item.font()
             font.setBold(True)  # Bold
             node.text_item.setFont(font)
+        except RuntimeError as e:
+            # Object already deleted
+            if "already deleted" in str(e):
+                print(f"Text item already deleted while setting highlight style")
+            return
+        except:
+            # Other errors, skip this node
+            return
     
     def _build_highlighted_html(self, text: str, bg_color: QColor, fg_color: QColor) -> str:
         """Build HTML text with highlighting"""
@@ -375,7 +436,6 @@ class BDDMindMapView(QGraphicsView):
             highlighted_text = pattern.sub(replacement, highlighted_text)
         
         return f'<span style="color: white;">{highlighted_text}</span>'
-        self.connections.clear()
 
     def add_bdd_scenario(self, scenario_data: dict, scenario_index: int):
         """Add BDD scenario to the graph"""
@@ -648,19 +708,20 @@ class BDDMindMapDock(QWidget):
 
     def update_mind_map(self):
         """Update mind map"""
-        print(f"update_mind_map called with {len(self.current_scenarios)} scenarios")
+        print(f"[BDD-MINDMAP] update_mind_map called with {len(self.current_scenarios)} scenarios")
         self.mind_map_view.clear_graph()
 
         for i, scenario in enumerate(self.current_scenarios):
-            print(f"Adding scenario {i}: {scenario.get('title', 'No title')}")
+            print(f"[BDD-MINDMAP] Adding scenario {i}: {scenario.get('title', 'No title')}")
             self.mind_map_view.add_bdd_scenario(scenario, i)
 
         # Update node count
         node_count = len(self.mind_map_view.nodes)
-        print(f"Total nodes created: {node_count}")
+        print(f"[BDD-MINDMAP] Total nodes created: {node_count}")
         self.node_count_label.setText(f"Nodes: {node_count}")
 
         # Auto layout
+        print(f"[BDD-MINDMAP] Scheduling auto layout")
         QTimer.singleShot(100, self.auto_layout)
 
     def auto_layout(self):
@@ -729,8 +790,8 @@ class BDDMindMapDock(QWidget):
     def load_bdd_from_content(self, file_path: str, content: str):
         """Load BDD data from file content directly"""
         try:
-            print(f"load_bdd_from_content called with file_path: {file_path}")
-            print(f"Content length: {len(content) if content else 0}")
+            print(f"[BDD-MINDMAP] load_bdd_from_content called with file_path: {file_path}")
+            print(f"[BDD-MINDMAP] Content length: {len(content) if content else 0}")
             
             if not file_path or not file_path.endswith('.md'):
                 self.current_scenarios = []
@@ -746,11 +807,11 @@ class BDDMindMapDock(QWidget):
 
             # Convert to BDD format
             bdd_content = self.bdd_converter.convert_to_bdd(content)
-            print(f"BDD content: {bdd_content[:200]}...")
+            print(f"[BDD-MINDMAP] BDD content: {bdd_content[:200]}...")
 
             # Parse BDD scenarios
             scenarios = self.bdd_converter._parse_bdd_scenarios(bdd_content)
-            print(f"Parsed {len(scenarios)} scenarios")
+            print(f"[BDD-MINDMAP] Parsed {len(scenarios)} scenarios")
             
             self.current_scenarios = scenarios
             self.update_mind_map()
@@ -762,6 +823,7 @@ class BDDMindMapDock(QWidget):
 
         except Exception as e:
             # Don't clear scenarios on error to avoid flickering
+            print(f"[BDD-MINDMAP] Error in load_bdd_from_content: {str(e)}")
             self.status_label.setText(f"Parse error: {str(e)}")
     
     # Keyword highlighting methods - delegate to mind_map_view

@@ -36,6 +36,24 @@ class SearchResultsDock(QWidget):
         
         self._setup_ui()
         self._load_statistics()
+    
+    def cleanup(self):
+        """Clean up resources"""
+        # Stop debounce timer
+        if hasattr(self, 'debounce_timer'):
+            self.debounce_timer.stop()
+            self.debounce_timer.deleteLater()
+        
+        # Clear search results model
+        if hasattr(self, 'results_model'):
+            self.results_model.clear()
+    
+    def __del__(self):
+        """Destructor to ensure resource cleanup"""
+        try:
+            self.cleanup()
+        except:
+            pass
         
     def _setup_ui(self):
         """Setup UI"""
@@ -133,9 +151,12 @@ class SearchResultsDock(QWidget):
         
     def _on_text_changed(self):
         """Handle text change with debouncing"""
+        text = self.search_edit.text().strip()
+        print(f"[SEARCH-DOCK] Search text changed to: '{text}'")
         # Restart debounce timer
         self.debounce_timer.stop()
-        self.debounce_timer.start()
+        if text:
+            self.debounce_timer.start()
     
     def _perform_search(self):
         """Perform the actual search"""
@@ -144,6 +165,7 @@ class SearchResultsDock(QWidget):
             # If input is empty, don't search and keep last results
             return
         
+        print(f"[SEARCH] _perform_search with query: '{query}'")
         self.last_search_query = query
         self._search(query)
     

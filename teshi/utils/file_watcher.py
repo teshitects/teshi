@@ -8,7 +8,7 @@ from pathlib import Path
 class FileWatcher:
     """Simple file watcher for detecting file changes"""
     
-    def __init__(self, watch_paths: list, callback: Callable[[str, str], None], check_interval: float = 2.0):
+    def __init__(self, watch_paths: list, callback: Callable[[str, str], None], check_interval: float = 5.0):
         """
         Initialize file watcher
         
@@ -83,10 +83,11 @@ class FileWatcher:
         """Watch loop"""
         while self._watching:
             try:
+                print(f"[FILEWATCHER] Starting scan with interval {self.check_interval}s")
                 self._scan_files()
                 time.sleep(self.check_interval)
             except Exception as e:
-                print(f"Error in file watcher: {e}")
+                print(f"[FILEWATCHER] Error in file watcher: {e}")
                 time.sleep(self.check_interval)
     
     def start(self):

@@ -17,6 +17,7 @@ class EditorWidget(QWidget):
         self._global_bdd_mode = False
         self._original_content = ""
         self._pending_bdd_conversion = False  # Flag for deferred BDD conversion
+        self._suppress_text_change = False  # Flag to suppress text change handling
         
         # Initialize BDD converter
         self.bdd_converter = BDDConverter()
@@ -80,6 +81,11 @@ class EditorWidget(QWidget):
     
     def _on_text_changed(self):
         """Handle text change - reapply highlighting in text mode"""
+        # Check if this is a system-initiated change (not user input)
+        if hasattr(self, '_suppress_text_change') and self._suppress_text_change:
+            print(f"[EDITOR] _on_text_changed for {self.filePath} - SUPPRESSED (system-initiated)")
+            return
+            
         if not self._is_bdd_mode and self.keyword_highlighter.keywords:
             # Use a timer to avoid performance issues during typing
             if not hasattr(self, '_highlight_timer'):
@@ -88,12 +94,44 @@ class EditorWidget(QWidget):
                 self._highlight_timer.setSingleShot(True)
                 self._highlight_timer.timeout.connect(self._delayed_highlight)
             
+            print(f"[EDITOR] _on_text_changed for {self.filePath}, starting highlight timer")
             self._highlight_timer.start(300)  # 300ms delay
     
     def _delayed_highlight(self):
         """Apply highlighting after delay"""
         if not self._is_bdd_mode:
-            self._apply_highlighting()
+            print(f"[EDITOR] _delayed_highlight for {self.filePath}")
+            self._suppress_text_change = True
+            try:
+                self._apply_highlighting()
+            finally:
+                self._suppress_text_change = False
+    
+    def closeEvent(self, event):
+        """Clean up resources when widget is closed"""
+        # Clean up highlight timer
+        if hasattr(self, '_highlight_timer'):
+            self._highlight_timer.stop()
+            self._highlight_timer.deleteLater()
+            delattr(self, '_highlight_timer')
+        
+        # Clean up highlighter
+        if hasattr(self, 'highlighter'):
+            self.highlighter.setDocument(None)
+            self.highlighter.deleteLater()
+            self.highlighter = None
+        
+        super().closeEvent(event)
+    
+    def __del__(self):
+        """Destructor to ensure resource cleanup"""
+        try:
+            # Clean up highlighter if not already cleaned
+            if hasattr(self, 'highlighter') and self.highlighter:
+                self.highlighter.setDocument(None)
+                self.highlighter = None
+        except:
+            pass
     
     def _toggle_bdd_mode(self):
         """Toggle between standard and BDD format"""
@@ -217,27 +255,47 @@ class EditorWidget(QWidget):
     def set_highlight_keywords(self, keywords: list):
         """设置要高亮的关键字列表"""
         self.keyword_highlighter.set_keywords(keywords)
-        self._apply_highlighting()
+        self._suppress_text_change = True
+        try:
+            self._apply_highlighting()
+        finally:
+            self._suppress_text_change = False
     
     def add_highlight_keyword(self, keyword: str):
         """添加单个关键字进行高亮"""
         self.keyword_highlighter.add_keyword(keyword)
-        self._apply_highlighting()
+        self._suppress_text_change = True
+        try:
+            self._apply_highlighting()
+        finally:
+            self._suppress_text_change = False
     
     def remove_highlight_keyword(self, keyword: str):
         """移除关键字高亮"""
         self.keyword_highlighter.remove_keyword(keyword)
-        self._apply_highlighting()
+        self._suppress_text_change = True
+        try:
+            self._apply_highlighting()
+        finally:
+            self._suppress_text_change = False
     
     def clear_highlight_keywords(self):
         """清除所有关键字高亮"""
         self.keyword_highlighter.clear_keywords()
-        self._apply_highlighting()
+        self._suppress_text_change = True
+        try:
+            self._apply_highlighting()
+        finally:
+            self._suppress_text_change = False
     
     def set_highlight_color(self, color: QColor):
         """设置高亮颜色"""
         self.keyword_highlighter.set_highlight_color(color)
-        self._apply_highlighting()
+        self._suppress_text_change = True
+        try:
+            self._apply_highlighting()
+        finally:
+            self._suppress_text_change = False
     
     def get_highlight_keywords(self) -> list:
         """获取当前的关键字列表"""
@@ -261,6 +319,7 @@ class EditorWidget(QWidget):
         try:
             current_content = self.bdd_converter.convert_to_bdd(self._original_content)
             highlighted_content = self.keyword_highlighter.highlight_html_content(current_content)
+            print(f"[EDITOR] Applying BDD highlighting for {self.filePath}")
             self.bdd_view.set_bdd_content(highlighted_content)
         except Exception as e:
             # 如果高亮失败，使用原始内容

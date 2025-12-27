@@ -839,7 +839,12 @@ class TestCaseIndexManager:
         
         # Update after 1 second delay to avoid frequent updates
         import threading
+        # Cancel existing timer if it exists
+        if hasattr(self, '_update_timer') and self._update_timer.is_alive():
+            self._update_timer.cancel()
+            print(f"[INDEXWATCH] Cancelled existing update timer for {file_path}")
         self._update_timer = threading.Timer(1.0, self._update_single_file, args=[file_path])
+        print(f"[INDEXWATCH] Starting new update timer for {file_path}")
         self._update_timer.start()
     
     def _update_single_file(self, file_path: str):
@@ -849,7 +854,7 @@ class TestCaseIndexManager:
         
         for attempt in range(max_retries):
             try:
-                print(f"Starting update for file: {file_path} (attempt {attempt + 1})")
+                print(f"[INDEXWATCH] Starting update for file: {file_path} (attempt {attempt + 1})")
                 
                 # Use a single connection for the entire update operation
                 conn = sqlite3.connect(self.db_path, timeout=30.0)
@@ -924,5 +929,24 @@ class TestCaseIndexManager:
         """Destructor to ensure resource cleanup"""
         try:
             self.stop_file_watcher()
+            
+            # Clean up update timer if it exists
+            if hasattr(self, '_update_timer') and self._update_timer and self._update_timer.is_alive():
+                self._update_timer.cancel()
+                self._update_timer = None
         except:
             pass  # Ignore errors during cleanup
+    
+    def cleanup(self):
+        """Explicit cleanup method for better resource management"""
+        try:
+            self.stop_file_watcher()
+            
+            # Clean up update timer if it exists
+            if hasattr(self, '_update_timer') and self._update_timer and self._update_timer.is_alive():
+                self._update_timer.cancel()
+                self._update_timer = None
+                
+            print("TestCaseIndexManager cleanup completed")
+        except Exception as e:
+            print(f"Error during TestCaseIndexManager cleanup: {e}")

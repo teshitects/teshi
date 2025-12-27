@@ -28,6 +28,9 @@ class WorkspaceManager(QObject):
     
     def trigger_save(self):
         """Trigger delayed save"""
+        import traceback
+        caller = traceback.extract_stack()[-2].name  # Get calling function name
+        print(f"[WORKSPACE] trigger_save called from: {caller}")
         self.save_timer.stop()
         self.save_timer.start(self.save_delay)
     
@@ -188,6 +191,7 @@ class WorkspaceManager(QObject):
     
     def _save_workspace(self):
         """Save method triggered by timer"""
+        print("[WORKSPACE] _save_workspace executed")
         if self.main_window:
             self.save_workspace(self.main_window)
     
