@@ -42,6 +42,7 @@ class TestCaseIndexManager:
         self.file_watcher = None
         self._update_pending = False
         self._update_timer = None
+        self._adaptive_checker_running = False
     
     def _init_databases(self):
         """Initialize databases"""
@@ -788,10 +789,11 @@ class TestCaseIndexManager:
     def start_file_watcher(self):
         """Start file watcher with delay to avoid conflict with index building"""
         if self.file_watcher is None:
+            # Use adaptive intervals: 2.0s when active, 10.0s when inactive
             self.file_watcher = FileWatcher(
                 watch_paths=[self.project_path],
                 callback=self._on_file_changed,
-                check_interval=2.0
+                check_interval=self.get_adaptive_interval()
             )
         
         if not self.file_watcher.is_watching():
@@ -803,14 +805,58 @@ class TestCaseIndexManager:
                 if self.file_watcher and not self.file_watcher.is_watching():
                     self.file_watcher.start()
                     print("File watcher started")
+                    # Start adaptive interval checker
+                    self._start_adaptive_interval_checker()
             
             threading.Thread(target=delayed_start, daemon=True).start()
+    
+    def get_adaptive_interval(self):
+        """Get appropriate scan interval based on application state"""
+        try:
+            from PySide6.QtWidgets import QApplication
+            app = QApplication.instance()
+            if app:
+                # Check if application window has focus
+                active_window = app.activeWindow()
+                if active_window and active_window.isVisible():
+                    return 2.0  # Fast response when app is active
+                else:
+                    return 10.0  # Slower scanning when app is inactive
+            return 5.0  # Default interval
+        except:
+            return 5.0  # Fallback interval
+    
+    def _start_adaptive_interval_checker(self):
+        """Start background thread to adjust file watcher interval based on app state"""
+        import threading
+        import time
+        
+        self._adaptive_checker_running = True
+        
+        def adaptive_checker():
+            while self._adaptive_checker_running and self.file_watcher and self.file_watcher.is_watching():
+                try:
+                    new_interval = self.get_adaptive_interval()
+                    old_interval = self.file_watcher.check_interval
+                    
+                    if abs(new_interval - old_interval) > 0.1:  # Only update if significant change
+                        self.file_watcher.set_check_interval(new_interval)
+                    
+                    time.sleep(5.0)  # Check every 5 seconds
+                except Exception as e:
+                    print(f"[FILEWATCHER] Error in adaptive checker: {e}")
+                    break
+        
+        threading.Thread(target=adaptive_checker, daemon=True).start()
     
     def stop_file_watcher(self):
         """Stop file watcher"""
         if self.file_watcher and self.file_watcher.is_watching():
             self.file_watcher.stop()
             print("File watcher stopped")
+        
+        # Stop adaptive interval checker
+        self._adaptive_checker_running = False
         
         # Cancel any pending update timer
         if hasattr(self, '_update_timer') and self._update_timer:

@@ -117,6 +117,12 @@ class FileWatcher:
         """Whether currently watching"""
         return self._watching
     
+    def set_check_interval(self, interval: float):
+        """Update check interval during runtime"""
+        if interval > 0:
+            self.check_interval = interval
+            print(f"[FILEWATCHER] Check interval updated to {interval}s")
+    
     def add_watch_path(self, path: str):
         """Add watch path"""
         if path not in self.watch_paths:
