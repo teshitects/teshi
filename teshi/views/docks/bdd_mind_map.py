@@ -218,16 +218,7 @@ class BDDMindMapView(QGraphicsView):
 
     def clear_graph(self):
         """Clear graphics with proper memory cleanup"""
-        # Remove all items from scene with proper cleanup
-        items = self.scene.items()
-        for item in items:
-            if hasattr(item, 'connections'):
-                item.connections.clear()
-            self.scene.removeItem(item)
-            # Delete the item to free memory
-            item.deleteLater()
-        
-        # Clear scene
+        # Close all items in the scene
         self.scene.clear()
         
         # Clear references

@@ -32,10 +32,17 @@ class BDDConverter:
     
     def _parse_test_cases(self, content: str) -> List[Dict]:
         """Parse test cases from markdown content"""
-        # For current use case, treat the entire content as a single test case
-        # This handles Chinese format with "## 测试用例名称" pattern
-        test_case = self._parse_single_test_case(content)
-        return [test_case] if test_case else []
+        # Split by horizontal separators if present to handle multiple test cases
+        sections = re.split(r'\n---\n', content)
+        test_cases = []
+        
+        for section in sections:
+            if section.strip():
+                test_case = self._parse_single_test_case(section)
+                if test_case:
+                    test_cases.append(test_case)
+                    
+        return test_cases
     
     def _parse_single_test_case(self, content: str) -> Optional[Dict]:
         """Parse a single test case from content"""
@@ -242,8 +249,8 @@ class BDDConverter:
     def _parse_bdd_scenarios(self, content: str) -> List[Dict]:
         """Parse BDD scenarios from content"""
         scenarios = []
-        # Split by double newlines or scenario boundaries
-        sections = re.split(r'\n(?:---\n)?(?=Scenario:)', content)
+        # Split by scenario boundaries, accounting for leading spaces
+        sections = re.split(r'\n(?:---\n)?\s*(?=Scenario:)', content)
         
         for section in sections:
             section = section.strip()
