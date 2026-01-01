@@ -10,7 +10,7 @@
 
 <div align="center">
 
-[English](README.md) | Chinese Documentation
+English | [中文](README.zh-CN.md)
 
 [Features](#Features) • [Quick Start](#Quick Start) • [User Guide](#User Guide) • [Developer Documentation](#Developer Documentation) • [License](#License)
 
@@ -32,20 +32,20 @@ Teshi is an Integrated Testing Environment (ITE) tool designed specifically for 
 
 ## Roadmap
 
-- [x] 【Test Cases】Full-text search
-- [ ] 【Test Cases】Import test cases from third-party platforms (TestLink, Jira, etc.)
+- [x] [Test Cases] Full-text search
+- [ ] [Test Cases] Import test cases from third-party platforms (TestLink, Jira, etc.)
 - [ ] [Test Cases] Integrate AI features to assist designing test points on mind maps
 - [ ] [Test Cases] AI-assisted verification of team test case checklists
 - [ ] [Test Cases] Import cases from third-party platforms. AI-assisted field mapping during import
 - [ ] [Test Cases] Temporary workspace for staging restructured cases
-- [ ] 【UI Automation】Record and generate UI automation scripts
-- [ ] 【API Automation】Generate API test cases from UI automation scripts using Agent
-- [ ] 【API Automation】Capture errors and hand them over to Agent for processing
-- [ ] 【Defects】One-click defect reporting plugin for web projects
-- [ ] 【Defects】AI-integrated defect analysis to identify risk modules
-- [ ] 【Plugin】Plugin mechanism for easy feature expansion
-- [ ] 【Plugin】Network request capture and comparison
-- [ ] 【General】Custom configuration of AI models
+- [ ] [UI Automation] Record and generate UI automation scripts
+- [ ] [API Automation] Generate API test cases from UI automation scripts using Agent
+- [ ] [API Automation] Capture errors and hand them over to Agent for processing
+- [ ] [Defects] One-click defect reporting plugin for web projects
+- [ ] [Defects]AI-integrated defect analysis to identify risk modules
+- [ ] [Plugin] Plugin mechanism for easy feature expansion
+- [ ] [Plugin]Network request capture and comparison
+- [ ] [General] Custom configuration of AI models
 
 ## Key Features
 
