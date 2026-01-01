@@ -12,7 +12,7 @@
 
 English | [中文](README.zh-CN.md)
 
-[Features](#Features) • [Quick Start](#Quick Start) • [User Guide](#User Guide) • [Developer Documentation](#Developer Documentation) • [License](#License)
+[Features](#Features) • [Quick Start](#QuickStart) • [User Guide](#UserGuide) • [License](#License)
 
 </div>
 
@@ -67,7 +67,7 @@ Stores each text test case as a Markdown file for multi-dimensional management
 
 ---
 
-## Quick Start
+## QuickStart
 
 #### Method One: Direct Use (Recommended)
 1. Download `teshi-windows-x64.zip` from [Releases](../../releases)
@@ -83,7 +83,7 @@ poetry install
 poetry run python -m teshi.main
 ```
 
-## User Guide
+## UserGuide
 
 ### Create a Project
 
