@@ -5,95 +5,76 @@
 <div align="center">
 
 ## Teshi
-**An intelligent test IDE designed for testers**
+**An IDE tool built specifically for testers**
 </div>
 
 <div align="center">
 
-English | [中文文档](README.zh-CN.md)
+[English](README.md) | Chinese Documentation
 
-[Features](#features) • [Quick Start](#quick-start) • [User Guide](#user-guide) • [Developer Guide](#developer-guide) • [License](#license)
+[Features](#Features) • [Quick Start](#Quick Start) • [User Guide](#User Guide) • [Developer Documentation](#Developer Documentation) • [License](#License)
 
 </div>
 
 ---
 
-## 📖 Introduction
+## Introduction
 
-Teshi is a test case management tool built with PySide6, designed specifically for testers. It provides an intuitive interface and powerful features to help you write, manage, and organize test cases more efficiently.
+Teshi is an Integrated Testing Environment (ITE) tool designed specifically for testers. Its goal is to **boost tester productivity**—even developers are eager to use Teshi for batch test case execution.
 
-### Why Teshi?
+### Why Choose Teshi?
 
-- 🚀 **Simple & Efficient** – Markdown-based test case management
-- 🔍 **Powerful Search** – FTS5 full-text search with Chinese segmentation
-- 🎯 **BDD Support** – Built-in BDD/Gherkin conversion
-- 📊 **Visualization** – Mind map view for test cases
-- 💾 **Workspace Management** – Auto-save and session restore
-- 🔄 **Real-time Monitoring** – File watching & incremental indexing
+- **Built for Testers** - Developed by frontline testers with deep insight into testing pain points
+- **Streamlined and Efficient** - Markdown-based test case management
+- **Powerful Search** - Full-text multi-keyword search powered by FTS5
 
 ---
 
-## ✨ Features
+## Roadmap
 
-### Core Features
+- [x] 【Test Cases】Full-text search
+- [ ] 【Test Cases】Import test cases from third-party platforms (TestLink, Jira, etc.)
+- [ ] [Test Cases] Integrate AI features to assist designing test points on mind maps
+- [ ] [Test Cases] AI-assisted verification of team test case checklists
+- [ ] [Test Cases] Import cases from third-party platforms. AI-assisted field mapping during import
+- [ ] [Test Cases] Temporary workspace for staging restructured cases
+- [ ] 【UI Automation】Record and generate UI automation scripts
+- [ ] 【API Automation】Generate API test cases from UI automation scripts using Agent
+- [ ] 【API Automation】Capture errors and hand them over to Agent for processing
+- [ ] 【Defects】One-click defect reporting plugin for web projects
+- [ ] 【Defects】AI-integrated defect analysis to identify risk modules
+- [ ] 【Plugin】Plugin mechanism for easy feature expansion
+- [ ] 【Plugin】Network request capture and comparison
+- [ ] 【General】Custom configuration of AI models
+
+## Key Features
+
+Stores each text test case as a Markdown file for multi-dimensional management
 
 #### 1. Test Case Editor
-- Markdown-based editing
+- Markdown formatting
 - Syntax highlighting
 - Real-time preview
-- Auto-save
 
 #### 2. Project Explorer
-- Tree structure navigation
-- Quick file access
-- File search
-- Workspace state persistence
+- Tree-based directory structure
+- Workspace state saving
 
-#### 3. BDD Conversion
-- Standard ⇄ BDD/Gherkin
-- Given-When-Then mapping
-- Step number preservation
-- Global BDD mode toggle
-
-#### 4. BDD Mind Map
+#### 3. BDD Mind Map
 - Visual representation of test case structure
-- Auto-parsing of BDD format
-- Real-time sync with editor
-
-#### 5. Full-text Search Engine
-- SQLite FTS5-based indexing
-- Chinese 1-gram & 2-gram segmentation
-- Highlighted results
-- Incremental updates
-
-#### 6. Workspace Management
-- Save opened tabs
-- Save editor cursor position
-- Save dock layout
-- Save project tree expansion state
-
-#### 7. File Monitoring
-- Auto-detect Markdown changes
-- Real-time index updates
-- 1-second debounce
+- Automatic BDD parsing
+- Real-time synchronization
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### System Requirements
-- **OS**: Windows 10/11
-- **Python**: 3.13+ (for development)
-- **Memory**: 512MB+
-
-### Installation
-
-#### Option 1: Use Prebuilt Binary (Recommended)
+#### Method One: Direct Use (Recommended)
 1. Download `teshi-windows-x64.zip` from [Releases](../../releases)
-2. Extract to any directory
+2. Extract the archive
 3. Run `teshi.exe`
 
-#### Option 2: Run from Source
+#### Method Two: Run from Source Code
 
 ```bash
 git clone https://github.com/yourusername/teshi.git
@@ -102,86 +83,38 @@ poetry install
 poetry run python -m teshi.main
 ```
 
-## 📚 User Guide
+## User Guide
 
 ### Create a Project
 
 1. Launch Teshi
-2. Choose “Create New Project” or “Open Existing Project”
-3. Select a folder
+2. Select “Create New Project” or “Open Existing Project”
+3. Choose the project folder
 
-### Write Test Cases
+### Writing Test Cases
 
-```markdown
-# Test Case Title
 
-## Test Case Name
-Your test case name
+### Using BDD Mode
 
-## Preconditions
-1. Condition 1
-2. Condition 2
+Click the BDD icon on the right to open the mind map window
 
-## Steps
-1. Step 1
-2. Step 2
+### Searching Test Cases
 
-## Expected Results
-1. Result 1
-2. Result 2
-```
-
-### Use BDD Mode
-
-1. Write in standard format
-2. Click the BDD toggle button
-3. Convert to Gherkin format
-4. Click again to revert
-
-### Search Test Cases
-
-Shortcut: `Ctrl + Shift + F`
+Click the search button in the left toolbar
 
 ---
 
-## 🛠 Developer Guide
 
-### Project Structure
 
-```
-teshi/
-├── teshi/
-│   ├── main.py
-│   ├── assets/
-│   ├── controllers/
-│   ├── models/
-│   ├── repositories/
-│   ├── utils/
-│   └── views/
-├── tests/
-├── scripts/
-├── build_exe.py
-├── pyproject.toml
-└── README.md
-```
 
-### Build
+## License
 
-```bash
-poetry install --with build
-python build_exe.py
-```
-
----
-
-## 📄 License
-
-This project is licensed under the Apache-2.0 License.
+This project is licensed under the Apache License, Version 2.0.
 
 ---
 
 <div align="center">
 
-If you find this project helpful, please ⭐ Star it!
+If this project has been helpful to you, please give it a ⭐ Star!
 
 </div>
