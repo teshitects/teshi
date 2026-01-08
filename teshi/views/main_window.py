@@ -9,6 +9,7 @@ from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
 from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.docks.bdd_mind_map import BDDMindMapDock
 from teshi.views.docks.search_results import SearchResultsDock
+from teshi.views.docks.ai_chat import AIChatDock
 from teshi.views.widgets.editor_widget import EditorWidget
 # from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog  # No longer used
 from teshi.utils.workspace_manager import WorkspaceManager
@@ -225,6 +226,7 @@ class MainWindow(QMainWindow):
         project_was_visible = self.project_dock.isVisible()
         search_was_visible = self.search_dock.isVisible()
         bdd_was_visible = self.bdd_mind_map_dock.isVisible()
+        ai_chat_was_visible = self.ai_chat_dock.isVisible()
         
         # Save dock dimensions before cleanup
         if not project_was_visible:
@@ -233,6 +235,8 @@ class MainWindow(QMainWindow):
             self.search_dock.show()
         if not bdd_was_visible:
             self.bdd_mind_map_dock.show()
+        if not ai_chat_was_visible:
+            self.ai_chat_dock.show()
         
         # Force update of the UI to ensure dimensions are correct
         from PySide6.QtWidgets import QApplication
@@ -254,6 +258,8 @@ class MainWindow(QMainWindow):
             self.search_dock.hide()
         if not bdd_was_visible:
             self.bdd_mind_map_dock.hide()
+        if not ai_chat_was_visible:
+            self.ai_chat_dock.hide()
         
         # Close the main window and show project selection page
         from teshi.views.project_select_page import ProjectSelectPage
@@ -329,6 +335,15 @@ class MainWindow(QMainWindow):
         self.bdd_mind_map_dock.setWidget(self.bdd_mind_map)
         self.addDockWidget(Qt.RightDockWidgetArea, self.bdd_mind_map_dock)
         self.bdd_mind_map_dock.hide()
+
+        # Add AI Chat dock to right toolbar
+        action_ai = right_toolbar.addAction(QIcon(resource_path("assets/icons/mindmap.png")), "AI Chat")
+        action_ai.triggered.connect(lambda: self.toggle_dock(self.ai_chat_dock))
+        self.ai_chat_dock = QDockWidget("AI Chat", self)
+        self.ai_chat = AIChatDock(self)
+        self.ai_chat_dock.setWidget(self.ai_chat)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.ai_chat_dock)
+        self.ai_chat_dock.hide()
 
         # central tab widget
         self.tabs = QTabWidget()
