@@ -337,7 +337,7 @@ class MainWindow(QMainWindow):
         self.bdd_mind_map_dock.hide()
 
         # Add AI Chat dock to right toolbar
-        action_ai = right_toolbar.addAction(QIcon(resource_path("assets/icons/mindmap.png")), "AI Chat")
+        action_ai = right_toolbar.addAction("AI Chat")
         action_ai.triggered.connect(lambda: self.toggle_dock(self.ai_chat_dock))
         self.ai_chat_dock = QDockWidget("AI Chat", self)
         self.ai_chat = AIChatDock(self)
