@@ -1,5 +1,6 @@
 # Import required modules
 import os
+import json
 from datetime import datetime
 from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QPushButton, QHBoxLayout, QFrame, QSizePolicy, QDialog, \
     QLineEdit, QFormLayout, QFileDialog, QDialogButtonBox
@@ -9,10 +10,41 @@ from teshi.utils.project_manager import ProjectManager
 from teshi.utils.resource_path import resource_path
 
 
+def load_global_settings():
+    """Load global settings from config file"""
+    config_file = os.path.join(os.path.expanduser('~'), '.teshi', 'settings.json')
+    default_settings = {
+        'font_size': 12,
+        'editor_font_size': 12,
+        'ui_font_size': 12
+    }
+    
+    try:
+        if os.path.exists(config_file):
+            print(f"[ProjectSelectPage] Loading settings from: {config_file}")
+            with open(config_file, 'r', encoding='utf-8') as f:
+                loaded = json.load(f)
+                default_settings.update(loaded)
+                print(f"[ProjectSelectPage] Loaded settings: {default_settings}")
+        else:
+            print(f"[ProjectSelectPage] Settings file not found: {config_file}, using defaults")
+    except Exception as e:
+        print(f"[ProjectSelectPage] Error loading settings: {e}")
+    
+    return default_settings
+
+
 # Class for the project selection page UI
 class ProjectSelectPage(QWidget):
     def __init__(self):
         super().__init__()
+
+        # Load global settings and apply UI font size
+        settings = load_global_settings()
+        ui_font_size = settings.get('ui_font_size', 12)
+        font = self.font()
+        font.setPointSize(ui_font_size)
+        self.setFont(font)
 
         # Set window title, geometry, and background color
         self.setWindowTitle("Welcome to Teshi")
@@ -180,6 +212,9 @@ class ProjectSelectPage(QWidget):
             self.close()
             from teshi.views.main_window import MainWindow
             main_window = MainWindow(name_edit.text(), path_edit.text())
+            # Apply saved settings
+            settings = load_global_settings()
+            main_window.apply_settings(settings)
             main_window.show()
 
     def show_open_project_dialog(self):
@@ -197,6 +232,9 @@ class ProjectSelectPage(QWidget):
             self.close()
             from teshi.views.main_window import MainWindow
             main_window = MainWindow(project_name, folder_path)
+            # Apply saved settings
+            settings = load_global_settings()
+            main_window.apply_settings(settings)
             main_window.show()
             
     def open_project(self, path):
@@ -213,6 +251,9 @@ class ProjectSelectPage(QWidget):
         self.main_window = MainWindow(project_name, path)
         # Prevent deletion on close
         self.main_window.setAttribute(Qt.WA_DeleteOnClose, False)
+        # Apply saved settings
+        settings = load_global_settings()
+        self.main_window.apply_settings(settings)
         self.main_window.show()
 
         # Update current project in project manager

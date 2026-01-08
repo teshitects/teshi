@@ -113,10 +113,44 @@ class MainWindow(QMainWindow):
         help_menu.addAction(about_action)
         about_action.triggered.connect(self._show_about_dialog)
 
+        # Settings Menu
+        settings_menu = menubar.addMenu("Settings")
+        settings_action = QAction("Settings", self)
+        settings_menu.addAction(settings_action)
+        settings_action.triggered.connect(self._show_settings_dialog)
+
     def _show_about_dialog(self):
         from teshi.views.widgets.about_dialog import AboutDialog
         about_dialog = AboutDialog()
         about_dialog.exec()
+
+    def _show_settings_dialog(self):
+        """Show settings dialog"""
+        from teshi.views.widgets.settings_dialog import SettingsDialog
+        settings_dialog = SettingsDialog(self)
+        settings_dialog.exec()
+
+    def apply_settings(self, settings):
+        """Apply settings to the main window"""
+        print(f"[MainWindow] Applying settings: {settings}")
+        # Apply UI font size
+        ui_font_size = settings.get('ui_font_size', 12)
+        print(f"[MainWindow] Setting UI font size to: {ui_font_size}")
+        font = self.font()
+        font.setPointSize(ui_font_size)
+        self.setFont(font)
+        
+        # Apply editor font size to all open tabs
+        editor_font_size = settings.get('editor_font_size', 12)
+        print(f"[MainWindow] Setting editor font size to: {editor_font_size}, open tabs: {self.tabs.count()}")
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget):
+                editor_font = widget.text_edit.font()
+                editor_font.setPointSize(editor_font_size)
+                widget.text_edit.setFont(editor_font)
+                print(f"[MainWindow] Applied editor font size to tab {i}")
+
     
 
 
