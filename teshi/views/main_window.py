@@ -95,11 +95,6 @@ class MainWindow(QMainWindow):
         close_project_action = QAction("Close Project", self)
         file_menu.addAction(close_project_action)
         close_project_action.triggered.connect(self._close_project)
-
-        # View Menu
-        # view_menu = menubar.addMenu("View")
-        #
-        # view_menu.addSeparator()
         
         # Clear highlighting action
         clear_highlight_action = QAction("Clear Highlighting", self)
@@ -880,7 +875,7 @@ class MainWindow(QMainWindow):
             self.bdd_mind_map.clear_highlight_keywords()
     
     def set_highlight_color(self, color):
-        """设置所有编辑器的高亮颜色"""
+        """"""
         for i in range(self.tabs.count()):
             widget = self.tabs.widget(i)
             if isinstance(widget, EditorWidget):

@@ -42,19 +42,33 @@ class EditorWidget(QWidget):
         toolbar_layout = QHBoxLayout()
         toolbar_layout.setContentsMargins(5, 2, 5, 2)
         
-        # BDD toggle button
-        self.bdd_button = QPushButton("BDD")
-        self.bdd_button.setMaximumWidth(60)
-        self.bdd_button.setToolTip("Toggle BDD mode")
-        self.bdd_button.clicked.connect(self._toggle_bdd_mode)
+        # Button style sheet for active/inactive states
+        self.active_btn_style = "background-color: #0078d4; color: white; border-radius: 4px; font-weight: bold;"
+        self.inactive_btn_style = "background-color: transparent; border: 1px solid #ccc; border-radius: 4px;"
+
+        # RAW button
+        self.raw_btn = QPushButton("RAW")
+        self.raw_btn.setFixedWidth(60)
+        self.raw_btn.setToolTip("Switch to Raw text mode")
+        self.raw_btn.clicked.connect(self._on_raw_clicked)
         
-        toolbar_layout.addWidget(self.bdd_button)
+        # BDD button
+        self.bdd_btn = QPushButton("BDD")
+        self.bdd_btn.setFixedWidth(60)
+        self.bdd_btn.setToolTip("Switch to BDD mode")
+        self.bdd_btn.clicked.connect(self._on_bdd_clicked)
+        
+        toolbar_layout.addWidget(self.raw_btn)
+        toolbar_layout.addWidget(self.bdd_btn)
         toolbar_layout.addStretch()
+        
+        # Initial button states
+        self._update_button_states()
         
         # Add toolbar to layout
         toolbar_widget = QWidget()
         toolbar_widget.setLayout(toolbar_layout)
-        toolbar_widget.setMaximumHeight(30)
+        toolbar_widget.setMaximumHeight(35)
         layout.addWidget(toolbar_widget)
         
         # Create stacked widget for switching between text editor and BDD view
@@ -133,13 +147,34 @@ class EditorWidget(QWidget):
         except:
             pass
     
+    def _update_button_states(self):
+        """Update button styles based on current mode"""
+        if self._is_bdd_mode:
+            self.bdd_btn.setStyleSheet(self.active_btn_style)
+            self.raw_btn.setStyleSheet(self.inactive_btn_style)
+        else:
+            self.raw_btn.setStyleSheet(self.active_btn_style)
+            self.bdd_btn.setStyleSheet(self.inactive_btn_style)
+
+    def _on_raw_clicked(self):
+        """Switch to RAW mode"""
+        if not self._is_bdd_mode:
+            return
+        self._toggle_bdd_mode()
+
+    def _on_bdd_clicked(self):
+        """Switch to BDD mode"""
+        if self._is_bdd_mode:
+            return
+        self._toggle_bdd_mode()
+
     def _toggle_bdd_mode(self):
         """Toggle between standard and BDD format"""
         if self._is_bdd_mode:
             # Switch back to standard format
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
-            self.bdd_button.setText("BDD")
+            self._update_button_states()
             self._pending_bdd_conversion = False
             
             # If global BDD mode is enabled, disable it
@@ -186,7 +221,7 @@ class EditorWidget(QWidget):
             # Disable BDD mode for this editor
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
-            self.bdd_button.setText("BDD")
+            self._update_button_states()
             self._pending_bdd_conversion = False
     
     def _apply_bdd_mode(self):
@@ -200,7 +235,7 @@ class EditorWidget(QWidget):
             self.bdd_view.set_bdd_content(bdd_content)
             self.stacked_widget.setCurrentWidget(self.bdd_view)
             self._is_bdd_mode = True
-            self.bdd_button.setText("Raw")
+            self._update_button_states()
             self._pending_bdd_conversion = False
             
             # Apply keyword highlighting after switching to BDD mode
@@ -253,7 +288,7 @@ class EditorWidget(QWidget):
     
     # Keyword highlighting methods
     def set_highlight_keywords(self, keywords: list):
-        """设置要高亮的关键字列表"""
+        """Set keywords to highlight"""
         self.keyword_highlighter.set_keywords(keywords)
         self._suppress_text_change = True
         try:
@@ -262,7 +297,7 @@ class EditorWidget(QWidget):
             self._suppress_text_change = False
     
     def add_highlight_keyword(self, keyword: str):
-        """添加单个关键字进行高亮"""
+        """Add single keyword to highlight"""
         self.keyword_highlighter.add_keyword(keyword)
         self._suppress_text_change = True
         try:
@@ -271,7 +306,7 @@ class EditorWidget(QWidget):
             self._suppress_text_change = False
     
     def remove_highlight_keyword(self, keyword: str):
-        """移除关键字高亮"""
+        """Clear single keyword from highlight"""
         self.keyword_highlighter.remove_keyword(keyword)
         self._suppress_text_change = True
         try:
@@ -280,7 +315,7 @@ class EditorWidget(QWidget):
             self._suppress_text_change = False
     
     def clear_highlight_keywords(self):
-        """清除所有关键字高亮"""
+        """Clear all highlight keywords"""
         self.keyword_highlighter.clear_keywords()
         self._suppress_text_change = True
         try:
@@ -289,7 +324,7 @@ class EditorWidget(QWidget):
             self._suppress_text_change = False
     
     def set_highlight_color(self, color: QColor):
-        """设置高亮颜色"""
+        """Set highlight color"""
         self.keyword_highlighter.set_highlight_color(color)
         self._suppress_text_change = True
         try:
@@ -298,16 +333,16 @@ class EditorWidget(QWidget):
             self._suppress_text_change = False
     
     def get_highlight_keywords(self) -> list:
-        """获取当前的关键字列表"""
+        """Get current highlight keywords"""
         return self.keyword_highlighter.keywords.copy()
     
     def _apply_highlighting(self):
-        """应用关键字高亮"""
+        """Highlight content based on current mode"""
         if self._is_bdd_mode:
             # 在BDD模式下，高亮BDD内容
             self._apply_bdd_highlighting()
         else:
-            # 在文本编辑模式下，高亮文本内容
+            # In text mode, highlight text edit content
             self.keyword_highlighter.highlight_text(self.text_edit)
     
     def _apply_bdd_highlighting(self):
@@ -315,12 +350,11 @@ class EditorWidget(QWidget):
         if not hasattr(self, 'bdd_view') or not self.keyword_highlighter.keywords:
             return
         
-        # 获取BDD视图的内容并进行HTML高亮处理
+        # Get current BDD content
         try:
             current_content = self.bdd_converter.convert_to_bdd(self._original_content)
             highlighted_content = self.keyword_highlighter.highlight_html_content(current_content)
             print(f"[EDITOR] Applying BDD highlighting for {self.filePath}")
             self.bdd_view.set_bdd_content(highlighted_content)
         except Exception as e:
-            # 如果高亮失败，使用原始内容
             print(f"Error applying BDD highlighting: {e}")
