@@ -5,6 +5,7 @@ from typing import Dict, List, Any
 from PySide6.QtCore import QObject, QTimer, Qt
 
 
+
 class WorkspaceManager(QObject):
     """Workspace manager, responsible for auto-saving and restoring workspace state"""
     
@@ -97,9 +98,12 @@ class WorkspaceManager(QObject):
         if hasattr(main_window, 'current_left_dock'):
             workspace_data['current_left_dock'] = main_window.current_left_dock
         
-        # Save global BDD mode
         if hasattr(main_window, '_global_bdd_mode'):
             workspace_data['bdd_mode'] = main_window._global_bdd_mode
+        
+        # Save global Automate mode
+        if hasattr(main_window, '_global_automate_mode'):
+            workspace_data['automate_mode'] = main_window._global_automate_mode
         
         return workspace_data
     
@@ -175,10 +179,16 @@ class WorkspaceManager(QObject):
                 except:
                     pass
             
-            # Save global BDD mode
             if hasattr(main_window, '_global_bdd_mode'):
                 try:
                     workspace_data['bdd_mode'] = main_window._global_bdd_mode
+                except:
+                    pass
+            
+            # Save global Automate mode
+            if hasattr(main_window, '_global_automate_mode'):
+                try:
+                    workspace_data['automate_mode'] = main_window._global_automate_mode
                 except:
                     pass
             
@@ -312,10 +322,16 @@ class WorkspaceManager(QObject):
         
         QTimer.singleShot(100, restore_dock_widths)
         
-        # Restore BDD mode
+        # Restore BDD and Automate modes
         bdd_mode = workspace_data.get('bdd_mode', False)
+        automate_mode = workspace_data.get('automate_mode', False)
+        
         if bdd_mode and hasattr(main_window, '_global_bdd_mode'):
             main_window._global_bdd_mode = bdd_mode
+            # Apply to all tabs will be done after tabs are restored
+        
+        if automate_mode and hasattr(main_window, '_global_automate_mode'):
+            main_window._global_automate_mode = automate_mode
             # Apply to all tabs will be done after tabs are restored
         
         # Restore project explorer state
@@ -356,14 +372,19 @@ class WorkspaceManager(QObject):
                         main_window.tabs.setCurrentIndex(current_tab_index)
                     main_window.tabs.blockSignals(False)
                     
-                    # Apply BDD mode to all restored tabs (with deferred conversion)
-                    if bdd_mode and hasattr(main_window, 'global_bdd_mode_changed'):
+                    # Apply BDD or Automate mode to all restored tabs (with deferred conversion)
+                    if (bdd_mode and hasattr(main_window, 'global_bdd_mode_changed')) or \
+                       (automate_mode and hasattr(main_window, 'global_automate_mode_changed')):
                         for i in range(main_window.tabs.count()):
                             widget = main_window.tabs.widget(i)
-                            if hasattr(widget, 'set_global_bdd_mode'):
+                            # Check if it's an editor widget via attributes to avoid circular imports
+                            if widget and hasattr(widget, 'filePath') and hasattr(widget, 'dirty'):
                                 # Use defer_conversion=True for non-current tabs
                                 defer = (i != current_tab_index)
-                                widget.set_global_bdd_mode(bdd_mode, defer_conversion=defer)
+                                if bdd_mode and hasattr(widget, 'set_global_bdd_mode'):
+                                    widget.set_global_bdd_mode(bdd_mode, defer_conversion=defer)
+                                if automate_mode and hasattr(widget, 'set_global_automate_mode'):
+                                    widget.set_global_automate_mode(automate_mode, defer_conversion=defer)
                     
                     # Re-enable updates
                     main_window._suppress_updates = False

@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QTextEdit, QMessageBox, QFrame, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QToolButton, QStackedWidget
+from PySide6.QtWidgets import QTextEdit, QMessageBox, QFrame, QPushButton, QVBoxLayout, QWidget, QHBoxLayout, QToolButton, QStackedWidget, QLabel
 from PySide6.QtCore import Signal, QFileInfo, QEvent, Qt
 from PySide6.QtGui import QIcon, QAction, QColor
 
@@ -14,9 +14,11 @@ class EditorWidget(QWidget):
         super().__init__(parent)
         self.filePath = file_path
         self._is_bdd_mode = False
+        self._is_automate_mode = False
         self._global_bdd_mode = False
         self._original_content = ""
-        self._pending_bdd_conversion = False  # Flag for deferred BDD conversion
+        # Flag for deferred BDD conversion
+        self._pending_bdd_conversion = False
         self._suppress_text_change = False  # Flag to suppress text change handling
         
         # Initialize BDD converter
@@ -57,9 +59,16 @@ class EditorWidget(QWidget):
         self.bdd_btn.setFixedWidth(60)
         self.bdd_btn.setToolTip("Switch to BDD mode")
         self.bdd_btn.clicked.connect(self._on_bdd_clicked)
+
+        # Automate button
+        self.automate_btn = QPushButton("Automate")
+        self.automate_btn.setFixedWidth(80)
+        self.automate_btn.setToolTip("Switch to Automate mode")
+        self.automate_btn.clicked.connect(self._on_automate_clicked)
         
         toolbar_layout.addWidget(self.raw_btn)
         toolbar_layout.addWidget(self.bdd_btn)
+        toolbar_layout.addWidget(self.automate_btn)
         toolbar_layout.addStretch()
         
         # Initial button states
@@ -83,6 +92,12 @@ class EditorWidget(QWidget):
         # BDD view widget
         self.bdd_view = BDDViewWidget()
         self.stacked_widget.addWidget(self.bdd_view)
+
+        # Automate placeholder
+        self.canvas_placeholder = QLabel("Automate Canvas Mode (Placeholder)")
+        self.canvas_placeholder.setAlignment(Qt.AlignCenter)
+        self.canvas_placeholder.setStyleSheet("font-size: 18px; color: #666; background-color: #f5f5f5;")
+        self.stacked_widget.addWidget(self.canvas_placeholder)
         
         layout.addWidget(self.stacked_widget)
     
@@ -149,24 +164,90 @@ class EditorWidget(QWidget):
     
     def _update_button_states(self):
         """Update button styles based on current mode"""
-        if self._is_bdd_mode:
+        if self._is_automate_mode:
+            self.automate_btn.setStyleSheet(self.active_btn_style)
+            self.bdd_btn.setStyleSheet(self.inactive_btn_style)
+            self.raw_btn.setStyleSheet(self.inactive_btn_style)
+        elif self._is_bdd_mode:
             self.bdd_btn.setStyleSheet(self.active_btn_style)
             self.raw_btn.setStyleSheet(self.inactive_btn_style)
+            self.automate_btn.setStyleSheet(self.inactive_btn_style)
         else:
             self.raw_btn.setStyleSheet(self.active_btn_style)
             self.bdd_btn.setStyleSheet(self.inactive_btn_style)
+            self.automate_btn.setStyleSheet(self.inactive_btn_style)
 
     def _on_raw_clicked(self):
         """Switch to RAW mode"""
-        if not self._is_bdd_mode:
+        if not self._is_bdd_mode and not self._is_automate_mode:
             return
-        self._toggle_bdd_mode()
+        
+        if self._is_automate_mode:
+            self._is_automate_mode = False
+            self.stacked_widget.setCurrentWidget(self.text_edit)
+            self._update_button_states()
+        elif self._is_bdd_mode:
+            self._toggle_bdd_mode()
 
     def _on_bdd_clicked(self):
         """Switch to BDD mode"""
         if self._is_bdd_mode:
             return
-        self._toggle_bdd_mode()
+        
+        if self._is_automate_mode:
+            self._is_automate_mode = False
+            # Clearing automate mode first, then toggling BDD mode
+            # will ensure global state is handled correctly.
+            self._toggle_bdd_mode()
+        else:
+            self._toggle_bdd_mode()
+
+    def _on_automate_clicked(self):
+        """Switch to Automate mode"""
+        if self._is_automate_mode:
+            return
+            
+        # Trigger global toggle in main window
+        main_window = self.parent()
+        while main_window and not hasattr(main_window, 'global_automate_mode_changed'):
+            main_window = main_window.parent()
+        
+        if main_window and hasattr(main_window, '_toggle_global_automate_mode'):
+            # Only toggle if not already globally enabled
+            if not getattr(main_window, '_global_automate_mode', False):
+                main_window._toggle_global_automate_mode()
+            else:
+                # If globally enabled but this widget isn't in automate mode (shouldn't happen but for safety)
+                self._apply_automate_mode()
+        else:
+            # Fallback for local toggle if not in a main window context
+            if self._is_bdd_mode:
+                self._toggle_bdd_mode()
+            self._apply_automate_mode()
+
+    def _apply_automate_mode(self):
+        """Actually apply automate mode locally"""
+        if self._is_automate_mode:
+            return
+        
+        # If we were in BDD mode, we should leave it
+        if self._is_bdd_mode:
+            self._is_bdd_mode = False
+            
+        self._is_automate_mode = True
+        self.stacked_widget.setCurrentWidget(self.canvas_placeholder)
+        self._update_button_states()
+
+    def set_global_automate_mode(self, enabled: bool, defer_conversion: bool = False):
+        """Set global Automate mode state"""
+        if enabled and not self._is_automate_mode:
+            # Enable Automate mode
+            self._apply_automate_mode()
+        elif not enabled and self._is_automate_mode:
+            # Disable Automate mode
+            self._is_automate_mode = False
+            self.stacked_widget.setCurrentWidget(self.text_edit)
+            self._update_button_states()
 
     def _toggle_bdd_mode(self):
         """Toggle between standard and BDD format"""
@@ -217,10 +298,11 @@ class EditorWidget(QWidget):
             else:
                 # Enable BDD mode for this editor immediately
                 self._apply_bdd_mode()
-        elif not enabled and self._is_bdd_mode:
+        elif not enabled and (self._is_bdd_mode or self._is_automate_mode):
             # Disable BDD mode for this editor
             self.stacked_widget.setCurrentWidget(self.text_edit)
             self._is_bdd_mode = False
+            self._is_automate_mode = False
             self._update_button_states()
             self._pending_bdd_conversion = False
     
@@ -229,6 +311,10 @@ class EditorWidget(QWidget):
         if self._is_bdd_mode:
             return  # Already in BDD mode
         
+        # If we were in automate mode, leave it
+        if self._is_automate_mode:
+            self._is_automate_mode = False
+            
         self._original_content = self.text_edit.toPlainText()
         try:
             bdd_content = self.bdd_converter.convert_to_bdd(self._original_content)

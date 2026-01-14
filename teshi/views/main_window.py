@@ -20,6 +20,8 @@ from teshi.utils.resource_path import resource_path
 class MainWindow(QMainWindow):
     # Signal for global BDD mode changes
     global_bdd_mode_changed = Signal(bool)
+    # Signal for global Automate mode changes
+    global_automate_mode_changed = Signal(bool)
     
     def __init__(self, project_name, project_path):
         super().__init__()
@@ -31,6 +33,8 @@ class MainWindow(QMainWindow):
         
         # Global BDD mode state
         self._global_bdd_mode = False
+        # Global Automate mode state
+        self._global_automate_mode = False
         
         # Flag to suppress updates during bulk operations (e.g., workspace restore)
         self._suppress_updates = False
@@ -493,9 +497,9 @@ class MainWindow(QMainWindow):
         from teshi.views.docks.markdown_highlighter import MarkdownHighlighter
         editor.highlighter = MarkdownHighlighter(editor.text_edit.document())
 
-        editor.modifiedChanged.connect(
-            lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
-        )
+        # Store slot function for proper disconnection later
+        slot_update_title = lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)
+        editor.modifiedChanged.connect(slot_update_title)
         
         # Connect editor content changes to mind map update (with debouncing)
         editor.text_edit.textChanged.connect(self._schedule_mind_map_update)
@@ -503,12 +507,18 @@ class MainWindow(QMainWindow):
         # Connect to global BDD mode changes
         self.global_bdd_mode_changed.connect(editor.set_global_bdd_mode)
         
+        # Connect to global Automate mode changes
+        if hasattr(editor, 'set_global_automate_mode'):
+            self.global_automate_mode_changed.connect(editor.set_global_automate_mode)
+        
         # Store signal connections for cleanup
         editor._signal_connections = [
-            (editor.modifiedChanged, lambda dirty, ed=editor: self._update_tab_title_by_editor(ed, dirty)),
+            (editor.modifiedChanged, slot_update_title),
             (editor.text_edit.textChanged, self._schedule_mind_map_update),
             (self.global_bdd_mode_changed, editor.set_global_bdd_mode)
         ]
+        if hasattr(editor, 'set_global_automate_mode'):
+            editor._signal_connections.append((self.global_automate_mode_changed, editor.set_global_automate_mode))
         
         # Set default highlight color to yellow
         from PySide6.QtGui import QColor
@@ -517,8 +527,12 @@ class MainWindow(QMainWindow):
         # Apply current global BDD mode state (with deferred conversion if suppressing updates)
         if suppress_updates or self._suppress_updates:
             editor.set_global_bdd_mode(self._global_bdd_mode, defer_conversion=True)
+            if hasattr(editor, 'set_global_automate_mode'):
+                editor.set_global_automate_mode(self._global_automate_mode, defer_conversion=True)
         else:
             editor.set_global_bdd_mode(self._global_bdd_mode)
+            if hasattr(editor, 'set_global_automate_mode'):
+                editor.set_global_automate_mode(self._global_automate_mode)
 
         self.tabs.addTab(editor, os.path.basename(path))
         self.tabs.setTabToolTip(self.tabs.count() - 1, path)
@@ -714,6 +728,15 @@ class MainWindow(QMainWindow):
         """Toggle global BDD mode for all tabs"""
         self._global_bdd_mode = not self._global_bdd_mode
         
+        # If enabling BDD mode, disable Automate mode (mutually exclusive)
+        if self._global_bdd_mode and self._global_automate_mode:
+            self._global_automate_mode = False
+            self.global_automate_mode_changed.emit(False)
+            for i in range(self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if isinstance(widget, EditorWidget) and hasattr(widget, 'set_global_automate_mode'):
+                    widget.set_global_automate_mode(False)
+        
         # Emit signal to all editors
         self.global_bdd_mode_changed.emit(self._global_bdd_mode)
         
@@ -726,6 +749,32 @@ class MainWindow(QMainWindow):
         # Show message
         mode_text = "enabled" if self._global_bdd_mode else "disabled"
         self.show_message(f"Global BDD mode {mode_text}", 2000)
+
+    def _toggle_global_automate_mode(self):
+        """Toggle global Automate mode for all tabs"""
+        self._global_automate_mode = not self._global_automate_mode
+        
+        # If enabling Automate mode, disable BDD mode (mutually exclusive)
+        if self._global_automate_mode and self._global_bdd_mode:
+            self._global_bdd_mode = False
+            self.global_bdd_mode_changed.emit(False)
+            for i in range(self.tabs.count()):
+                widget = self.tabs.widget(i)
+                if isinstance(widget, EditorWidget):
+                    widget.set_global_bdd_mode(False)
+        
+        # Emit signal to all editors
+        self.global_automate_mode_changed.emit(self._global_automate_mode)
+        
+        # Apply Automate mode to all existing editor tabs
+        for i in range(self.tabs.count()):
+            widget = self.tabs.widget(i)
+            if isinstance(widget, EditorWidget) and hasattr(widget, 'set_global_automate_mode'):
+                widget.set_global_automate_mode(self._global_automate_mode)
+        
+        # Show message
+        mode_text = "enabled" if self._global_automate_mode else "disabled"
+        self.show_message(f"Global Automate mode {mode_text}", 2000)
     
     def get_global_bdd_mode(self) -> bool:
         """Get current global BDD mode state"""
