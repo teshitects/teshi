@@ -4,6 +4,7 @@ from PySide6.QtGui import QIcon, QAction, QColor
 
 from teshi.utils.bdd_converter import BDDConverter
 from teshi.views.widgets.bdd_view import BDDViewWidget
+from teshi.views.widgets.automate_mode_widget import AutomateModeWidget
 from teshi.utils.keyword_highlighter import KeywordHighlighter
 
 
@@ -94,10 +95,10 @@ class EditorWidget(QWidget):
         self.stacked_widget.addWidget(self.bdd_view)
 
         # Automate placeholder
-        self.canvas_placeholder = QLabel("Automate Canvas Mode (Placeholder)")
-        self.canvas_placeholder.setAlignment(Qt.AlignCenter)
-        self.canvas_placeholder.setStyleSheet("font-size: 18px; color: #666; background-color: #f5f5f5;")
-        self.stacked_widget.addWidget(self.canvas_placeholder)
+        # self.canvas_placeholder = QLabel("Automate Canvas Mode (Placeholder)")
+        # self.canvas_placeholder.setAlignment(Qt.AlignCenter)
+        # self.canvas_placeholder.setStyleSheet("font-size: 18px; color: #666; background-color: #f5f5f5;")
+        # self.stacked_widget.addWidget(self.canvas_placeholder)
         
         layout.addWidget(self.stacked_widget)
     
@@ -235,7 +236,13 @@ class EditorWidget(QWidget):
             self._is_bdd_mode = False
             
         self._is_automate_mode = True
-        self.stacked_widget.setCurrentWidget(self.canvas_placeholder)
+        
+        # Instantiate AutomateModeWidget if not exists
+        if not hasattr(self, 'automate_widget') or self.automate_widget is None:
+             self.automate_widget = AutomateModeWidget(self.filePath, self)
+             self.stacked_widget.addWidget(self.automate_widget)
+             
+        self.stacked_widget.setCurrentWidget(self.automate_widget)
         self._update_button_states()
 
     def set_global_automate_mode(self, enabled: bool, defer_conversion: bool = False):
