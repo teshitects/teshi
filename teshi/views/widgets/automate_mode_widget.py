@@ -16,7 +16,10 @@ from teshi.models.jupyter_node_model import JupyterNodeModel
 from teshi.utils.ipynb_file_util import load_notebook, save_notebook, add_cell, remove_cell
 from teshi.views.widgets.automate_widget import NodeSketchpadView, NodeSketchpadScene, JupyterGraphNode
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
+from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.config.automate_editor_config import AutomateEditorConfig
+from teshi.views.widgets.automate_browser_widget import AutomateBrowserWidget
+from teshi.utils import graph_util
 
 class AutomateModeWidget(QWidget):
     """
@@ -59,8 +62,21 @@ class AutomateModeWidget(QWidget):
         # |         Buttons            |
         # ------------------------------
         
+        # Splitter 0: Browser (Left) vs Main (Center+Right)
+        self.root_splitter = QSplitter(Qt.Horizontal)
+
+        # Browser Widget (Left)
+        # Assuming we can get project dir from notebook path or passed in. 
+        # Using notebook_dir as project root for now, or we might need a better way to find root.
+        # But 'notebook_dir' is usually just the folder of the current file.
+        # Ideally we should use the parent project root if possible.
+        # For now, let's use self.notebook_dir as a starting point.
+        self.browser_widget = AutomateBrowserWidget(self.notebook_dir)
+        self.root_splitter.addWidget(self.browser_widget)
+
         # Splitter 1: Top (Canvas+Side) vs Bottom (Logger)
         self.main_splitter = QSplitter(Qt.Vertical)
+
         
         # Splitter 2: Canvas vs Right Side (Raw/Result)
         self.center_splitter = QSplitter(Qt.Horizontal)
@@ -114,7 +130,16 @@ class AutomateModeWidget(QWidget):
         self.main_splitter.setStretchFactor(0, 4)
         self.main_splitter.setStretchFactor(1, 1)
         
-        layout.addWidget(self.main_splitter)
+        self.main_splitter.addWidget(self.center_splitter)
+        self.main_splitter.addWidget(self.logger_container)
+        self.main_splitter.setStretchFactor(0, 4)
+        self.main_splitter.setStretchFactor(1, 1)
+
+        self.root_splitter.addWidget(self.main_splitter)
+        self.root_splitter.setStretchFactor(0, 1) # Browser
+        self.root_splitter.setStretchFactor(1, 4) # Main Content
+        
+        layout.addWidget(self.root_splitter)
         
         # Button Group (Bottom)
         self.button_group = QWidget()
@@ -141,7 +166,11 @@ class AutomateModeWidget(QWidget):
         
         layout.addWidget(self.button_group)
 
+
     def load_notebook_data(self):
+        # Update Browser widget
+        self.browser_widget.refresh_project_nodes()
+
         # Ensure file exists, create empty if not
         if not Path(self.notebook_path).exists():
              self.create_empty_notebook()
@@ -213,6 +242,22 @@ class AutomateModeWidget(QWidget):
                                 self.scene.addItem(connection)
                                 rect.add_connection(connection)
                                 target_rect.add_connection(connection)
+
+        self.update_browser_canvas_nodes()
+
+    def update_browser_canvas_nodes(self):
+        """Update the execution order list in the browser widget"""
+        try:
+             # Build graph for topo sort
+             graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
+             
+             # Calculate topological order
+             topo_order = graph_util.topological_sort(graph)
+             
+             self.browser_widget.update_canvas_nodes(topo_order)
+        except Exception as e:
+             print(f"Error updating canvas nodes list: {e}")
+
 
     def create_empty_notebook(self):
         import nbformat
@@ -300,6 +345,8 @@ class AutomateModeWidget(QWidget):
                      # If code changed in item but not saved to cell yet
                      if item.data_model.code != cell.source:
                          cell.source = item.data_model.code
+
+        self.update_browser_canvas_nodes()
                          
         # D. Update Scene Data (Metadata)
         items_data = {item.data_model.title: item.to_dict() for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
