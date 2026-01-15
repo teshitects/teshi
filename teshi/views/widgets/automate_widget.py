@@ -111,6 +111,115 @@ class NodeSketchpadView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         #
         self._drag_mode = False
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasFormat("application/x-teshi-node"):
+            event.acceptProposedAction()
+        else:
+            super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasFormat("application/x-teshi-node"):
+            event.acceptProposedAction()
+        else:
+            super().dragMoveEvent(event)
+
+    def dropEvent(self, event):
+        if event.mimeData().hasFormat("application/x-teshi-node"):
+            import json
+            data = event.mimeData().data("application/x-teshi-node")
+            node_data = json.loads(data.data().decode('utf-8'))
+            
+            mouse_pos = self.mapToScene(event.pos())
+            
+            if node_data["type"] == "new_node":
+                title = node_data["title"]
+                code = node_data["code"]
+                self.add_node_on_drop(title, code, mouse_pos)
+            elif node_data["type"] == "copy_node":
+                source_title = node_data["title"]
+                self.copy_node_on_drop(source_title, mouse_pos)
+                
+            event.acceptProposedAction()
+        else:
+            super().dropEvent(event)
+
+    def add_node_on_drop(self, title, code, mouse_pos):
+        # Unique title check or suffix if needed?
+        # For now, simplistic approach:
+        # If title exists, we might want to append a number, but right_click_add_node logic 
+        # usually handles unique titles (User adds timestamp).
+        # But here we are dragging a "Template".
+        # Let's verify uniqueness or append suffix.
+        
+        final_title = title
+        existing_titles = [item.data_model.title for item in self._scene.items() if isinstance(item, JupyterGraphNode)]
+        if final_title in existing_titles:
+            # Append suffix
+            i = 1
+            while f"{title}_{i}" in existing_titles:
+                i += 1
+            final_title = f"{title}_{i}"
+            
+        item = JupyterGraphNode(final_title, code)
+        if self.father is not None:
+            item.signals.nodeClicked.connect(self.father.update_widget)
+        self._scene.addItem(item)
+        item.setPos(mouse_pos)
+        item.data_model.x = mouse_pos.x()
+        item.data_model.y = mouse_pos.y()
+        
+        # Trigger update of input widgets immediately just in case
+        # (Already called in __init__ of JupyterGraphNode)
+
+    def copy_node_on_drop(self, source_title, mouse_pos):
+        # Find source node
+        source_node = None
+        for item in self._scene.items():
+            if isinstance(item, JupyterGraphNode) and item.data_model.title == source_title:
+                source_node = item
+                break
+        
+        if not source_node:
+            print(f"Source node {source_title} not found for copy.")
+            return
+
+        # Prepare new title
+        base_title = source_node.data_model.title
+        final_title = base_title
+        existing_titles = [item.data_model.title for item in self._scene.items() if isinstance(item, JupyterGraphNode)]
+        
+        # Determine base name without existing numeric suffix if it looks like a copy?
+        # Or just append _copy or number.
+        # Requirement: "The created node... is equivalent to a copy" 
+        # Usually copies have new names to be unique in graph if titles must be unique.
+        # Assuming titles must be unique.
+        
+        i = 1
+        while final_title in existing_titles:
+            final_title = f"{base_title}_{i}"
+            i += 1
+            
+        # Create new node with same code
+        new_node = JupyterGraphNode(final_title, source_node.data_model.code)
+        
+        # Copy params
+        # IMPORTANT: We must deep copy params to avoid shared state if params are mutable objects
+        import copy
+        new_node.data_model.params = copy.deepcopy(source_node.data_model.params)
+        
+        # Refresh inputs to reflect copied params
+        new_node.update_input_widgets()
+        
+        if self.father is not None:
+            new_node.signals.nodeClicked.connect(self.father.update_widget)
+            
+        self._scene.addItem(new_node)
+        new_node.setPos(mouse_pos)
+        new_node.data_model.x = mouse_pos.x()
+        new_node.data_model.y = mouse_pos.y()
+
 
     def wheelEvent(self, event):
         # Zoom

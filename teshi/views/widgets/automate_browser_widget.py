@@ -2,10 +2,61 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QListWidget, QLabel, 
     QLineEdit, QSplitter, QGroupBox
 )
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QMimeData, QByteArray
+from PySide6.QtGui import QDrag
 import os
 import json
 from pathlib import Path
+
+class ProjectNodeListWidget(QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if not item:
+            return
+            
+        code = item.data(Qt.UserRole)
+        title = item.text()
+        
+        mime_data = QMimeData()
+        data = {
+            "type": "new_node",
+            "title": title,
+            "code": code
+        }
+        mime_data.setData("application/x-teshi-node", QByteArray(json.dumps(data).encode('utf-8')))
+        
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.exec(Qt.CopyAction)
+
+class CanvasNodeListWidget(QListWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragEnabled(True)
+
+    def startDrag(self, supportedActions):
+        item = self.currentItem()
+        if not item:
+            return
+            
+        title = item.text()
+        # For copying, we only need the title to find the source node in the scene
+        # The Scene/View will handle the lookup
+        
+        mime_data = QMimeData()
+        data = {
+            "type": "copy_node",
+            "title": title
+        }
+        mime_data.setData("application/x-teshi-node", QByteArray(json.dumps(data).encode('utf-8')))
+        
+        drag = QDrag(self)
+        drag.setMimeData(mime_data)
+        drag.exec(Qt.CopyAction)
 
 class AutomateBrowserWidget(QWidget):
     """
@@ -43,7 +94,7 @@ class AutomateBrowserWidget(QWidget):
         project_layout.addWidget(self.search_bar)
         
         # List Widget
-        self.project_list = QListWidget()
+        self.project_list = ProjectNodeListWidget(self)
         self.project_list.itemClicked.connect(self.on_project_item_clicked)
         project_layout.addWidget(self.project_list)
         
@@ -54,7 +105,7 @@ class AutomateBrowserWidget(QWidget):
         canvas_layout = QVBoxLayout(self.canvas_group)
         canvas_layout.setContentsMargins(5, 5, 5, 5)
         
-        self.canvas_list = QListWidget()
+        self.canvas_list = CanvasNodeListWidget(self)
         canvas_layout.addWidget(self.canvas_list)
         
         self.splitter.addWidget(self.canvas_group)
@@ -92,7 +143,13 @@ class AutomateBrowserWidget(QWidget):
                                     title = source.split('\n')[0].strip()
                                     if title and title not in self.extracted_nodes:
                                         self.extracted_nodes[title] = source
-                                        self.project_list.addItem(title)
+                                        
+                                        # Add to list with UserRole data
+                                        from PySide6.QtWidgets import QListWidgetItem
+                                        item = QListWidgetItem(title)
+                                        item.setData(Qt.UserRole, source)
+                                        self.project_list.addItem(item)
+                                        
                     except Exception as e:
                         print(f"Error reading {file_path}: {e}")
         
