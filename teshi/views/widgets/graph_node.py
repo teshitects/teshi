@@ -1,7 +1,8 @@
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QGraphicsLineItem, QMessageBox
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsTextItem, QGraphicsLineItem, QMessageBox, QGraphicsProxyWidget, QLineEdit, QComboBox, QSpinBox, QLabel, QWidget, QVBoxLayout
 from PySide6.QtGui import QBrush, QPen, QColor, QPolygonF, QPainterPath, QFont, QTransform
 from PySide6.QtCore import Qt, QRectF, QLineF, Signal
 import uuid
+import ast
 from teshi.config.automate_editor_config import AutomateEditorConfig
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.views.widgets.component.item_signals import ItemSignals
@@ -23,6 +24,7 @@ class JupyterGraphNode(QGraphicsItem):
         self._node_width = AutomateEditorConfig.node_width
         self._node_height = AutomateEditorConfig.node_height
         self._node_radius = AutomateEditorConfig.node_radius
+        self._inputs_height = 0
         self.observers = []
 
         # Create Node pen and brush
@@ -55,6 +57,109 @@ class JupyterGraphNode(QGraphicsItem):
         self.setAcceptHoverEvents(True)
         self.setFlag(QGraphicsItem.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        
+        # Dynamic inputs
+        self.input_proxies = {} # map label -> proxy widget
+        self.update_input_widgets()
+    
+    def parse_inputs_from_code(self):
+        inputs = []
+        try:
+            tree = ast.parse(self.data_model.code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'user_input':
+                    # Extract args
+                    args = [getattr(arg, 'value', None) for arg in node.args]
+                    kwargs = {kw.arg: getattr(kw.value, 'value', None) for kw in node.keywords}
+                    # Also handle list/dict in kwargs if possible (e.g. options=['A', 'B'])
+                    # AST for list is different: List(elts=[Constant(value='A'), ...])
+                    for kw in node.keywords:
+                        if kw.arg == 'options' and isinstance(kw.value, ast.List):
+                             kwargs['options'] = [getattr(elt, 'value', str(elt)) for elt in kw.value.elts]
+
+                    if len(args) > 0:
+                        label = args[0]
+                        default = args[1] if len(args) > 1 else None
+                        input_type = kwargs.get('type', 'text')
+                        options = kwargs.get('options', [])
+                        inputs.append({
+                            'label': label,
+                            'default': default,
+                            'type': input_type,
+                            'options': options
+                        })
+        except Exception as e:
+            print(f"Error parsing inputs: {e}")
+        return inputs
+
+    def update_input_widgets(self):
+        input_defs = self.parse_inputs_from_code()
+        current_labels = set(self.input_proxies.keys())
+        new_labels = set(d['label'] for d in input_defs)
+        
+        # Remove old
+        for label in current_labels - new_labels:
+            proxy = self.input_proxies.pop(label)
+            self.scene().removeItem(proxy) if self.scene() else None
+            proxy.setWidget(None) # release widget
+
+        # Add/Update new
+        y_offset = self._title_height + self._title_padding + 10
+        
+        for def_data in input_defs:
+            label = def_data['label']
+            if label not in self.input_proxies:
+                # Create widget container
+                container = QWidget()
+                layout = QVBoxLayout(container)
+                layout.setContentsMargins(0,0,0,0)
+                layout.setSpacing(2)
+                
+                lbl = QLabel(label)
+                lbl.setStyleSheet("color: white; font-size: 10px;")
+                layout.addWidget(lbl)
+                
+                if def_data['type'] == 'select':
+                    widget = QComboBox()
+                    widget.addItems(def_data.get('options', []))
+                    current_val = self.data_model.params.get(label, def_data['default'])
+                    widget.setCurrentText(str(current_val))
+                    widget.currentTextChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
+                elif def_data['type'] == 'number':
+                    widget = QSpinBox()
+                    widget.setValue(int(self.data_model.params.get(label, def_data.get('default', 0))))
+                    widget.valueChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
+                else: # text
+                    widget = QLineEdit()
+                    widget.setText(str(self.data_model.params.get(label, def_data.get('default', ''))))
+                    widget.textChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
+                
+                layout.addWidget(widget)
+                
+                proxy = QGraphicsProxyWidget(self)
+                proxy.setWidget(container)
+                self.input_proxies[label] = proxy
+            
+            # Position the proxy
+            proxy = self.input_proxies[label]
+            proxy.setPos(-self._node_width/2 + 10, -self._node_height/2 + y_offset)
+            proxy.setMinimumWidth(self._node_width - 20)
+            proxy.setMaximumWidth(self._node_width - 20)
+            y_offset += proxy.size().height() + 5
+            
+        # Adjust height? For now let's just let it overflow or expand rect if needed
+        # We need to update result text position
+        self._inputs_height = y_offset - (self._title_height + self._title_padding + 10)
+        if hasattr(self, '_result_textitem'):
+             self._result_textitem.setPos(-self._node_width / 2 + self._result_text_padding, 
+                                          -self._node_height / 2 + self._title_height + self._inputs_height + 20)
+
+    def on_param_changed(self, label, value):
+        self.data_model.params[label] = value
+
+    def to_dict(self):
+        # Update params from widgets just in case? No, signals handle it.
+        return super().to_dict()
 
     def remove_connection(self, connection):
         if connection in self.connections:
@@ -75,12 +180,14 @@ class JupyterGraphNode(QGraphicsItem):
         return super().itemChange(change, value)
 
     def boundingRect(self):
-        return QRectF(-self._node_width / 2, -self._node_height / 2, self._node_width, self._node_height)
+        height = self._node_height + self._inputs_height
+        return QRectF(-self._node_width / 2, -self._node_height / 2, self._node_width, height)
         # return self.shape().boundingRect()
 
     def paint(self, painter, option, widget):
+        height = self._node_height + self._inputs_height
         node_outline = QPainterPath()
-        node_outline.addRoundedRect(-self._node_width / 2, -self._node_height / 2, self._node_width, self._node_height, self._node_radius, self._node_radius)
+        node_outline.addRoundedRect(-self._node_width / 2, -self._node_height / 2, self._node_width, height, self._node_radius, self._node_radius)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(self._background_color)

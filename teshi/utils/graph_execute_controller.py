@@ -39,7 +39,10 @@ class GraphExecuteController(QObject):
         print(topo_order)
         # 2. Execute
         for node_id in topo_order:
-            self.execute(self.nodes[node_id][0], self.nodes[node_id][1], self.tab_id)
+            node_data = self.nodes[node_id]
+            # node_data structure: [code, uuid, params]
+            params = node_data[2] if len(node_data) > 2 else {}
+            self.execute(node_data[0], node_data[1], self.tab_id, params)
         # self.shutdown()
         # self.executor_stopped.emit()
 
@@ -51,10 +54,25 @@ class GraphExecuteController(QObject):
         topo_order_node_parent = graph_util.topological_sort_node_parent(self.graph, self.single_node_id)
         for order_id in topo_order_node_parent:
             if order_id is not None:
-                self.execute(self.nodes[order_id][0], self.nodes[order_id][1], self.tab_id)
+                node_data = self.nodes[order_id]
+                params = node_data[2] if len(node_data) > 2 else {}
+                self.execute(node_data[0], node_data[1], self.tab_id, params)
 
-    def execute(self, code, uuid, tab_id):
-        msg_id = self.kernel_client.execute(code)
+    def execute(self, code, uuid, tab_id, params=None):
+        if params is None:
+            params = {}
+        
+        # 1. Generate helper code
+        params_json = str(params) # Use repr/str for simple dict
+        helper_code = f"""
+_node_params = {params_json}
+def user_input(label, default=None, type="text", options=None):
+    return _node_params.get(label, default)
+"""
+        # 2. Splice code
+        full_code = helper_code + "\n" + code
+
+        msg_id = self.kernel_client.execute(full_code)
         self.executor_binding.emit(f"{msg_id}:{tab_id}#{uuid}")
         while True:
             try:

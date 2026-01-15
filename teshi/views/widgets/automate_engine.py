@@ -11,8 +11,9 @@ from PySide6.QtWidgets import QDockWidget, QMainWindow, QListWidget, QTabWidget,
 
 from src.controllers.graph_execute_controller import GraphExecuteController
 from src.models.JupyterNodeModel import JupyterNodeModel
-from src.utils.ipynb_file_util import load_notebook, save_notebook, add_cell, remove_cell
-from src.views.CustomTab import CustomTab
+from src.utils.yaml_graph_util import load_graph_from_yaml, save_graph_to_yaml
+from src.managers.node_lib_manager import NodeLibManager
+from src.views.widgets.yaml_tab import YamlTab
 from src.views.JupyterVisualRunnerEditor import *
 
 
@@ -23,6 +24,7 @@ class JupyterVisualRunner(QMainWindow):
         self.recent_files = self.settings.value("RecentFiles", [])
         if self.recent_files is None:
             self.recent_files = []
+        self.node_lib_manager = NodeLibManager()
         self.setup_node_sketchpad()
         self.center()
         self.thread1 = None
@@ -32,23 +34,22 @@ class JupyterVisualRunner(QMainWindow):
         self.settings.setValue('windowState', self.saveState())
 
     def add_tab_without_filepath(self):
-        # 1. Open file chooser to get the .ipynb file path
-        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open File", "", "Jupyter Notebook (*.ipynb)")
+        # 1. Open file chooser to get the .yaml file path
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Open File", "", "Workflow (*.yaml)")
         if file_path == '':
             return
         self.recent_files.append(file_path)
-        settings.setValue("RecentFiles", self.recent_files)
+        self.settings.setValue("RecentFiles", self.recent_files)
         self.add_tab(file_path)
 
     # MVP: 200 line to restructure the code
+    # MVP: 200 line to restructure the code
     def add_tab(self, file_path):
         """ Add a new tab"""
-        # 2. Load the .ipynb file
-        notebook = load_notebook(file_path)
-        if notebook.metadata.get("scene_data"):
-            items_data = notebook.metadata.get("scene_data")
-        else:
-            items_data = {}
+        # 2. Load the .yaml file
+        graph_data = load_graph_from_yaml(file_path)
+        nodes_data = graph_data.get('nodes', [])
+        connections_data = graph_data.get('connections', [])
 
         # 3. Init tab
         tab_id = str(uuid.uuid1())
@@ -57,56 +58,50 @@ class JupyterVisualRunner(QMainWindow):
         view = NodeSketchpadView(scene, self)
         view.setAlignment(Qt.AlignCenter)
         title = file_path.split('/')[-1]
-        tab_container = CustomTab(title, tab_id, notebook_dir, file_path, notebook, scene, view)
+        
+        tab_container = YamlTab(title, tab_id, notebook_dir, file_path, graph_data, scene, view)
         layout = QVBoxLayout(tab_container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(view)
         self.center_tabs.addTab(tab_container, title)
 
-        graph_nodes_table = {}
-        nodes = []
-        print("nodes len: ", len(notebook.cells))
-        for cell in notebook.cells:
-            if cell.cell_type == 'code':
-                node_model = JupyterNodeModel(cell.source.split('\n')[0], cell.source)
-                node_model.tab_id = tab_id
-                graph_nodes_table[node_model.title] = []
-                nodes.append(node_model)
-
-        # 4. Draw the graph
+        # 4. Create Nodes
         graph_nodes = {}
-        for index, node in enumerate(nodes):
-            if index == len(nodes) - 1:
-                break
-            if node.title in graph_nodes.keys():
-                rect1 = graph_nodes[nodes[index].title]
-            else:
-                rect1 = JupyterGraphNode(nodes[index].title, nodes[index].code)
-                graph_nodes[rect1._title] = rect1
-                rect1.setPos(index*0, 0)
-                rect1.signals.nodeClicked.connect(self.update_widget)
-
-            if nodes[index+1].title in graph_nodes.keys():
-                rect2 = graph_nodes[nodes[index+1].title]
-            else:
-                rect2 = JupyterGraphNode(nodes[index+1].title, nodes[index+1].code)
-                graph_nodes[rect2._title] = rect2
-                rect2.setPos((index+1)*300, 0)
-                rect2.signals.nodeClicked.connect(self.update_widget)
-
-            scene.addItem(rect1)
-            scene.addItem(rect2)
+        for node_data in nodes_data:
+            node_title = node_data['title']
+            # Get code from library, fallback to empty string
+            node_code = self.node_lib_manager.get_node_code(node_title)
+            
+            node_model = JupyterNodeModel(node_title, node_code)
+            node_model.tab_id = tab_id
+            node_model.uuid = node_data.get('id', str(uuid.uuid4()))
+            node_model.params = node_data.get('params', {})
+            node_model.x = node_data.get('pos', [0, 0])[0]
+            node_model.y = node_data.get('pos', [0, 0])[1]
+            
+            # Create graphic item
+            graph_node = JupyterGraphNode(node_model.title, node_model.code)
+            # Sync model data
+            graph_node.data_model = node_model
+            graph_node.setPos(node_model.x, node_model.y)
+            graph_node.signals.nodeClicked.connect(self.update_widget)
+            
+            scene.addItem(graph_node)
+            graph_nodes[node_title] = graph_node
 
         # 5. Draw the connections
-        for node in nodes:
-            if node.title in items_data.keys():
-                graph_nodes[node.title].setPos(items_data[node.title].x, items_data[node.title].y)
-                if items_data[node.title].children != []:
-                    for child_title in items_data[node.title].children:
-                        connection = ConnectionItem(graph_nodes[node.title], graph_nodes[child_title])
-                        scene.addItem(connection)
-                        graph_nodes[node.title].add_connection(connection)
-                        graph_nodes[child_title].add_connection(connection)
+        for conn_data in connections_data:
+            from_node = graph_nodes.get(conn_data['from'])
+            to_node = graph_nodes.get(conn_data['to'])
+            
+            if from_node and to_node:
+                connection = ConnectionItem(from_node, to_node)
+                scene.addItem(connection)
+                from_node.add_connection(connection)
+                to_node.add_connection(connection)
+                # Update model children relationships
+                if to_node.data_model.title not in from_node.data_model.children:
+                    from_node.data_model.children.append(to_node.data_model.title)
 
         self.center_tabs.setCurrentWidget(tab_container)
 
@@ -114,57 +109,52 @@ class JupyterVisualRunner(QMainWindow):
         current_widget = self.center_tabs.currentWidget()
         if current_widget is None:
             return
-        if isinstance(current_widget, CustomTab):
-            notebook = current_widget.notebook
-
-
-            notebook_item_titles = []
-            for cell in notebook.cells:
-                if cell.cell_type == 'code':
-                    notebook_item_titles.append(cell.source.split('\n')[0])
-
-            scene_item_titles = []
+        if isinstance(current_widget, YamlTab):
+            # 1. Collect Nodes and Connections from Scene
+            nodes_data = []
+            connections_data = []
+            
+            graph_nodes = {}
             for item in current_widget.scene.items():
                 if isinstance(item, JupyterGraphNode):
-                    scene_item_titles.append(item._title)
-            # Update the scene data
+                    graph_nodes[item.data_model.title] = item
+                    
+                    # Update global library with current code
+                    self.node_lib_manager.save_node_code(item.data_model.title, item.data_model.code)
+                    
+                    node_data = {
+                        "id": item.data_model.uuid,
+                        "title": item.data_model.title,
+                        "pos": [item.pos().x(), item.pos().y()],
+                        "params": item.data_model.params
+                    }
+                    nodes_data.append(node_data)
+            
+            # Connections
+            # We iterate nodes and check their connections to avoid duplicates if possible
+            # Or just iterate all connection items if we can distinguish them
+            visited_conns = set()
             for item in current_widget.scene.items():
-                if isinstance(item, JupyterGraphNode):
-                    # Add New Node
-                    title = item._title
-                    if item._title not in notebook_item_titles:
-                        # Add new cell
-                        add_cell(notebook, item.data_model.code)
-                        notebook_item_titles.append(title)
+                if isinstance(item, ConnectionItem): # Assuming ConnectionItem is available or imported
+                    # Verify if this connection is already added
+                    if item in visited_conns:
+                        continue
+                    visited_conns.add(item)
+                    
+                    conn_data = {
+                        "from": item.source.data_model.title,
+                        "to": item.destination.data_model.title
+                    }
+                    connections_data.append(conn_data)
 
-            # Remove the deleted node
-            for title in notebook_item_titles:
-                if title not in scene_item_titles:
-                    remove_cell(notebook, notebook_item_titles.index(title))
-
-
-            notebook_item_titles = []
-            for cell in notebook.cells:
-                notebook_item_titles.append(cell.source.split('\n')[0])
-            # update code changed
-            for item in current_widget.scene.items():
-                if isinstance(item, JupyterGraphNode):
-                    if item.data_model.code_changed:
-                        title = item.data_model.title
-                        notebook.cells[notebook_item_titles.index(title)].source = item.data_model.code
-                        item.data_model.code_changed = False
-
-
-            # Update the scene data
-            # Extract data_model from the JupyterGraphNode in the scene
-            items_data = {item.data_model.title:item.to_dict() for item in current_widget.scene.items() if isinstance(item, JupyterGraphNode)}
-            notebook.metadata["scene_data"] = items_data
-
-            # Update the notebook
-            notebook.metadata["last_modified"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            notebook.metadata["last_modified_by"] = "Jupyter Visual Runner"
-
-            save_notebook(notebook, current_widget.notebook_path)
+            graph_data = {
+                "nodes": nodes_data,
+                "connections": connections_data
+            }
+            
+            # 2. Save to file
+            save_graph_to_yaml(graph_data, current_widget.file_path)
+            self.node_lib_manager.save_library()
 
     def restore(self):
         current_widget = self.center_tabs.currentWidget()
@@ -180,9 +170,10 @@ class JupyterVisualRunner(QMainWindow):
         current_tab_widget = self.center_tabs.currentWidget()
         if current_tab_widget is None:
             return
-        if isinstance(current_tab_widget, CustomTab):
+        if isinstance(current_tab_widget, YamlTab):
             graph = {item.data_model.title:item.data_model.children for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
-            nodes = {item.data_model.title:[item.data_model.code, item.data_model.uuid] for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
+            # Update nodes structure to [code, uuid, params]
+            nodes = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
 
             self.restore()
             if self.thread1 is not None:
@@ -202,9 +193,10 @@ class JupyterVisualRunner(QMainWindow):
         current_tab_widget = self.center_tabs.currentWidget()
         if current_tab_widget is None:
             return
-        if isinstance(current_tab_widget, CustomTab):
+        if isinstance(current_tab_widget, YamlTab):
             graph = {item.data_model.title: item.data_model.children for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
-            nodes = {item.data_model.title:[item.data_model.code, item.data_model.uuid] for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
+            # Update nodes structure to [code, uuid, params]
+            nodes = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in current_tab_widget.scene.items() if isinstance(item, JupyterGraphNode)}
 
             # Clear the scene
             self.restore()
@@ -400,12 +392,13 @@ class JupyterVisualRunner(QMainWindow):
         self.result_widget.setToolTip(data_model_dict['uuid'])
 
 
+
     def update_graph_node_code(self):
         # get the current tab
         current_tab = self.center_tabs.currentWidget()
         if current_tab is None:
             return
-        if isinstance(current_tab, CustomTab):
+        if isinstance(current_tab, YamlTab):
             # get the current scene
             scene = current_tab.scene
             # get specific node by uuid
@@ -416,6 +409,13 @@ class JupyterVisualRunner(QMainWindow):
                         item.data_model.code_changed = True
                         if item.data_model.code.split('\n')[0] != item.data_model.title:
                             self.item_title_changed(item)
+                        else:
+                            # Save code to library immediately or wait for save?
+                            self.node_lib_manager.save_node_code(item.data_model.title, item.data_model.code)
+                        
+                        # Refresh IO widgets
+                        item.update_input_widgets()
+                        item.update() # Force repaint
 
     def item_title_changed(self, item):
         old_title =  item.data_model.title
@@ -425,16 +425,12 @@ class JupyterVisualRunner(QMainWindow):
         current_tab = self.center_tabs.currentWidget()
         if current_tab is None:
             return
-        if isinstance(current_tab, CustomTab):
+        if isinstance(current_tab, YamlTab):
             # get the current scene
             scene = current_tab.scene
-            # update notebook
-            notebook_item_titles = []
-            for cell in current_tab.notebook.cells:
-                if cell.cell_type == 'code':
-                    notebook_item_titles.append(cell.source.split('\n')[0])
-            if old_title in notebook_item_titles:
-                current_tab.notebook.cells[notebook_item_titles.index(old_title)].source = item.data_model.code
+            # Update NodeLib: save new code under new title
+            self.node_lib_manager.save_node_code(new_title, item.data_model.code)
+            # We don't delete old title from library as other nodes might use it
             # check all node connections
             for item1 in scene.items():
                 if isinstance(item1, JupyterGraphNode):

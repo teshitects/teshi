@@ -13,6 +13,7 @@ class JupyterNodeModel(object):
         self.last_status = ""
         self.result = ""
         self.code_changed = False
+        self.params = {}
         super().__init__()
 
     def __str__(self):
