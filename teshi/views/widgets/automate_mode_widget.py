@@ -20,6 +20,7 @@ from teshi.views.widgets.component.automate_connection_item import ConnectionIte
 from teshi.config.automate_editor_config import AutomateEditorConfig
 from teshi.views.widgets.automate_browser_widget import AutomateBrowserWidget
 from teshi.utils import graph_util
+from teshi.utils.yaml_graph_util import save_graph_to_yaml
 
 class AutomateModeWidget(QWidget):
     """
@@ -216,6 +217,9 @@ class AutomateModeWidget(QWidget):
             # Position
             if node.title in items_data:
                  rect.setPos(items_data[node.title]['x'], items_data[node.title]['y'])
+                 if 'params' in items_data[node.title]:
+                     rect.data_model.params = items_data[node.title]['params']
+                     rect.update_input_widgets()
             else:
                  rect.setPos(index * 300, 0)
             
@@ -356,6 +360,50 @@ class AutomateModeWidget(QWidget):
         
         save_notebook(self.notebook, self.notebook_path)
 
+        # E. Sync to YAML if original file is .yaml
+        if self.file_path.endswith('.yaml'):
+             self.sync_to_yaml()
+
+    def sync_to_yaml(self):
+        """Sync current graph structure and params to original YAML file"""
+        nodes_data = []
+        connections_data = []
+        
+        # Nodes
+        for item in self.scene.items():
+            if isinstance(item, JupyterGraphNode):
+                 node_data = {
+                        "id": item.data_model.uuid,
+                        "title": item.data_model.title,
+                        "pos": [item.pos().x(), item.pos().y()],
+                        "params": item.data_model.params
+                    }
+                 nodes_data.append(node_data)
+        
+        # Connections
+        visited_conns = set()
+        for item in self.scene.items():
+             if isinstance(item, ConnectionItem):
+                  if item in visited_conns:
+                       continue
+                  visited_conns.add(item)
+                  
+                  conn_data = {
+                        "from": item.source.data_model.title,
+                        "to": item.destination.data_model.title
+                  }
+                  connections_data.append(conn_data)
+                  
+        graph_data = {
+            "nodes": nodes_data,
+            "connections": connections_data
+        }
+        
+        try:
+             save_graph_to_yaml(graph_data, self.file_path)
+        except Exception as e:
+             print(f"Failed to sync to YAML: {e}")
+
     def restore(self):
         for item in self.scene.items():
             if isinstance(item, JupyterGraphNode):
@@ -368,7 +416,7 @@ class AutomateModeWidget(QWidget):
         self.restore()
         
         graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
+        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
         
         if self.thread1 is not None:
              self.thread1.quit()
@@ -393,7 +441,7 @@ class AutomateModeWidget(QWidget):
         
         target_node = selected_items[0]
         graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
+        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
         
         if self.thread1 is not None:
              self.thread1.quit()

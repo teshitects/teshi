@@ -29,5 +29,6 @@ class JupyterNodeModel(object):
             "x": self.x,
             "y": self.y,
             "result": self.result,
-            "uuid": self.uuid
+            "uuid": self.uuid,
+            "params": self.params
             }
