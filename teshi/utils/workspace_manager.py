@@ -118,7 +118,8 @@ class WorkspaceManager(QObject):
                 },
                 'open_tabs': [],
                 'current_tab_index': getattr(main_window.tabs, 'currentIndex', lambda: -1)() if hasattr(main_window, 'tabs') else -1,
-                'dock_states': {}
+                'dock_states': {},
+                'automate_data': {}
             }
             
             # Fast tab collection with minimal attribute access
@@ -191,7 +192,18 @@ class WorkspaceManager(QObject):
                     workspace_data['automate_mode'] = main_window._global_automate_mode
                 except:
                     pass
-            
+
+            # Save Automate widget states for each tab
+            if hasattr(main_window, 'tabs'):
+                try:
+                    for i in range(main_window.tabs.count()):
+                        widget = main_window.tabs.widget(i)
+                        if widget and hasattr(widget, 'get_automate_state'):
+                            file_path = getattr(widget, 'filePath', f'tab_{i}')
+                            workspace_data['automate_data'][file_path] = widget.get_automate_state()
+                except:
+                    pass
+
             # Fast JSON write without pretty printing for speed
             with open(self.workspace_file, 'w', encoding='utf-8') as f:
                 json.dump(workspace_data, f, separators=(',', ':'), ensure_ascii=False)
@@ -403,7 +415,22 @@ class WorkspaceManager(QObject):
         
         # Delay tab restoration to allow window to show first
         QTimer.singleShot(50, restore_tabs)
-    
+
+        # Restore Automate widget states after tabs are restored
+        automate_data = workspace_data.get('automate_data', {})
+        if automate_data:
+            def restore_automate_states():
+                """Restore Automate widget states after all tabs are loaded"""
+                for i in range(main_window.tabs.count()):
+                    widget = main_window.tabs.widget(i)
+                    if widget and hasattr(widget, 'restore_automate_state'):
+                        file_path = getattr(widget, 'filePath', f'tab_{i}')
+                        if file_path in automate_data:
+                            widget.restore_automate_state(automate_data[file_path])
+
+            # Delay automate state restoration to ensure all tabs are fully loaded
+            QTimer.singleShot(1000, restore_automate_states)
+
     def clear_workspace(self):
         """Clear workspace state"""
         if os.path.exists(self.workspace_file):

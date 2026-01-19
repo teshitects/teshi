@@ -72,8 +72,10 @@ class AutomateBrowserWidget(QWidget):
         super().__init__(parent)
         self.project_dir = project_dir
         self.extracted_nodes = {} # {title: code}
-        
+        self.parent_widget = parent
+
         self.setup_ui()
+
         
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -86,34 +88,39 @@ class AutomateBrowserWidget(QWidget):
         self.project_group = QGroupBox("Project Nodes")
         project_layout = QVBoxLayout(self.project_group)
         project_layout.setContentsMargins(5, 5, 5, 5)
-        
+
         # Search Bar
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Search nodes...")
         self.search_bar.textChanged.connect(self.filter_project_nodes)
         project_layout.addWidget(self.search_bar)
-        
+
         # List Widget
         self.project_list = ProjectNodeListWidget(self)
         self.project_list.itemClicked.connect(self.on_project_item_clicked)
         project_layout.addWidget(self.project_list)
-        
+
         self.splitter.addWidget(self.project_group)
+
         
         # --- Bottom Section: Canvas Nodes (Execution Order) ---
         self.canvas_group = QGroupBox("Execution Order")
         canvas_layout = QVBoxLayout(self.canvas_group)
         canvas_layout.setContentsMargins(5, 5, 5, 5)
-        
+
         self.canvas_list = CanvasNodeListWidget(self)
         canvas_layout.addWidget(self.canvas_list)
-        
+
         self.splitter.addWidget(self.canvas_group)
-        
+
+        # Connect splitter moved signal to trigger workspace save
+        self.splitter.splitterMoved.connect(self._trigger_workspace_save)
+
         layout.addWidget(self.splitter)
-        
+
         # Initial scan
         self.refresh_project_nodes()
+
 
     def refresh_project_nodes(self):
         """Scans project directory for .ipynb files and extracts node titles."""
@@ -171,6 +178,18 @@ class AutomateBrowserWidget(QWidget):
         title = item.text()
         if title in self.extracted_nodes:
             # Logic to handle click (e.g. copy code, or just show info)
-            # For now, maybe just emit specific signal if needed, 
+            # For now, maybe just emit specific signal if needed,
             # or users can drag and drop if we implement that later.
             pass
+
+    def _trigger_workspace_save(self):
+        """Trigger workspace save through parent widget"""
+        if self.parent_widget:
+            # Find main window to trigger workspace save
+            main_window = self.parent_widget
+            while main_window and not hasattr(main_window, 'workspace_manager'):
+                main_window = main_window.parent()
+
+            if main_window and hasattr(main_window, 'workspace_manager'):
+                main_window.workspace_manager.trigger_save()
+

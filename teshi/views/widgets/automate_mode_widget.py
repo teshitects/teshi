@@ -40,11 +40,13 @@ class AutomateModeWidget(QWidget):
         self.notebook = None
         self.scene = None
         self.view = None
-        
+
         self.thread1 = None
-        
+        self.parent_widget = parent
+
         self.setup_ui()
         self.load_notebook_data()
+
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -65,22 +67,27 @@ class AutomateModeWidget(QWidget):
         
         # Splitter 0: Browser (Left) vs Main (Center+Right)
         self.root_splitter = QSplitter(Qt.Horizontal)
+        self.root_splitter.splitterMoved.connect(self._trigger_workspace_save)
 
         # Browser Widget (Left)
-        # Assuming we can get project dir from notebook path or passed in. 
+        # Assuming we can get project dir from notebook path or passed in.
         # Using notebook_dir as project root for now, or we might need a better way to find root.
         # But 'notebook_dir' is usually just the folder of the current file.
         # Ideally we should use the parent project root if possible.
         # For now, let's use self.notebook_dir as a starting point.
-        self.browser_widget = AutomateBrowserWidget(self.notebook_dir)
+        self.browser_widget = AutomateBrowserWidget(self.notebook_dir, self)
         self.root_splitter.addWidget(self.browser_widget)
+
 
         # Splitter 1: Top (Canvas+Side) vs Bottom (Logger)
         self.main_splitter = QSplitter(Qt.Vertical)
+        self.main_splitter.splitterMoved.connect(self._trigger_workspace_save)
 
-        
+
         # Splitter 2: Canvas vs Right Side (Raw/Result)
         self.center_splitter = QSplitter(Qt.Horizontal)
+        self.center_splitter.splitterMoved.connect(self._trigger_workspace_save)
+
         
         # Canvas Container
         self.canvas_container = QWidget()
@@ -97,7 +104,9 @@ class AutomateModeWidget(QWidget):
         self.raw_code_widget = QTextEdit()
         self.raw_code_widget.setLineWrapMode(QTextEdit.NoWrap)
         self.raw_code_widget.setFont(AutomateEditorConfig.node_title_font)
+        self.raw_code_widget.textChanged.connect(self._trigger_workspace_save)
         self.right_layout.addWidget(self.raw_code_widget)
+
         
         # Result Area
         self.right_layout.addWidget(QtWidgets.QLabel("Result"))
@@ -275,6 +284,9 @@ class AutomateModeWidget(QWidget):
         self.result_widget.setText(data_model_dict.get("result", ""))
         # set uuid in tooltip to identify which node is selected
         self.result_widget.setToolTip(data_model_dict['uuid'])
+        # Trigger workspace save when node selection changes
+        self._trigger_workspace_save()
+
 
     def update_graph_node_code(self):
         """Save code from Raw Code widget to the selected node"""
@@ -521,10 +533,127 @@ class AutomateModeWidget(QWidget):
             # Update result widget if this node is selected
             if self.result_widget.toolTip() == item.data_model.uuid:
                  self.result_widget.setText(error_msg)
+                 # Trigger workspace save when error is updated
+                 self._trigger_workspace_save()
         elif status_str.startswith("stream"):
+
             item.data_model.last_status = "stream"
             stream_msg = status_str.replace("stream:", "")
             item.set_result_text(stream_msg.split("\n")[0])
             item.data_model.result = stream_msg
             if self.result_widget.toolTip() == item.data_model.uuid:
                  self.result_widget.setText(stream_msg)
+                 # Trigger workspace save when result is updated
+                 self._trigger_workspace_save()
+
+    def get_automate_state(self):
+
+        """Get current Automate interface state for workspace saving"""
+        state = {
+            'project_nodes': [],
+            'execution_order': [],
+            'raw_code': '',
+            'result': '',
+            'selected_node_uuid': self.result_widget.toolTip(),
+            'browser_search_text': self.browser_widget.search_bar.text(),
+            'splitter_sizes': {
+                'root_splitter': self.root_splitter.sizes(),
+                'main_splitter': self.main_splitter.sizes(),
+                'center_splitter': self.center_splitter.sizes(),
+                'browser_splitter': self.browser_widget.splitter.sizes()
+            }
+        }
+
+        # Save project nodes (from browser widget)
+        for i in range(self.browser_widget.project_list.count()):
+            item = self.browser_widget.project_list.item(i)
+            if item and not item.isHidden():
+                state['project_nodes'].append({
+                    'title': item.text(),
+                    'code': item.data(Qt.UserRole) if item.data(Qt.UserRole) else ''
+                })
+
+        # Save execution order (canvas nodes)
+        for i in range(self.browser_widget.canvas_list.count()):
+            item = self.browser_widget.canvas_list.item(i)
+            if item:
+                state['execution_order'].append(item.text())
+
+        # Save raw code and result if a node is selected
+        if state['selected_node_uuid']:
+            state['raw_code'] = self.raw_code_widget.toPlainText()
+            state['result'] = self.result_widget.toPlainText()
+
+        return state
+
+    def restore_automate_state(self, state):
+        """Restore Automate interface state from workspace"""
+        try:
+            # Restore browser search text
+            if 'browser_search_text' in state:
+                self.browser_widget.search_bar.setText(state['browser_search_text'])
+
+            # Restore raw code and result for selected node
+            if state.get('selected_node_uuid'):
+                self.result_widget.setToolTip(state['selected_node_uuid'])
+                if 'raw_code' in state:
+                    self.raw_code_widget.setText(state['raw_code'])
+                if 'result' in state:
+                    self.result_widget.setText(state['result'])
+
+            # Restore splitter sizes with delay to ensure UI is fully loaded
+            if 'splitter_sizes' in state:
+                from PySide6.QtCore import QTimer
+                splitter_sizes = state['splitter_sizes']
+
+                def restore_splitter_sizes():
+                    """Restore all splitter sizes"""
+                    try:
+                        # Restore root splitter (Browser vs Main)
+                        if 'root_splitter' in splitter_sizes and len(splitter_sizes['root_splitter']) == 2:
+                            sizes = splitter_sizes['root_splitter']
+                            if sizes[0] > 0 and sizes[1] > 0:
+                                self.root_splitter.setSizes(sizes)
+
+                        # Restore main splitter (Canvas vs Logger)
+                        if 'main_splitter' in splitter_sizes and len(splitter_sizes['main_splitter']) == 2:
+                            sizes = splitter_sizes['main_splitter']
+                            if sizes[0] > 0 and sizes[1] > 0:
+                                self.main_splitter.setSizes(sizes)
+
+                        # Restore center splitter (Canvas vs Right side)
+                        if 'center_splitter' in splitter_sizes and len(splitter_sizes['center_splitter']) == 2:
+                            sizes = splitter_sizes['center_splitter']
+                            if sizes[0] > 0 and sizes[1] > 0:
+                                self.center_splitter.setSizes(sizes)
+
+                        # Restore browser splitter (Project nodes vs Execution order)
+                        if 'browser_splitter' in splitter_sizes and len(splitter_sizes['browser_splitter']) == 2:
+                            sizes = splitter_sizes['browser_splitter']
+                            if sizes[0] > 0 and sizes[1] > 0:
+                                self.browser_widget.splitter.setSizes(sizes)
+                    except Exception as e:
+                        print(f"Error restoring splitter sizes: {e}")
+
+                # Use QTimer to delay restoration until UI is fully loaded
+                QTimer.singleShot(100, restore_splitter_sizes)
+
+        # Note: Project nodes and execution order are dynamically managed
+        # and don't need explicit restoration as they are loaded from the notebook
+
+        except Exception as e:
+            print(f"Error restoring Automate state: {e}")
+
+
+    def _trigger_workspace_save(self):
+        """Trigger workspace save through parent widget"""
+        if self.parent_widget:
+            # Find main window to trigger workspace save
+            main_window = self.parent_widget
+            while main_window and not hasattr(main_window, 'workspace_manager'):
+                main_window = main_window.parent()
+
+            if main_window and hasattr(main_window, 'workspace_manager'):
+                main_window.workspace_manager.trigger_save()
+
+

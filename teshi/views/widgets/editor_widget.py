@@ -428,7 +428,18 @@ class EditorWidget(QWidget):
     def get_highlight_keywords(self) -> list:
         """Get current highlight keywords"""
         return self.keyword_highlighter.keywords.copy()
-    
+
+    def get_automate_state(self):
+        """Get Automate mode state if in automate mode"""
+        if self._is_automate_mode and hasattr(self, 'automate_widget') and self.automate_widget:
+            return self.automate_widget.get_automate_state()
+        return None
+
+    def restore_automate_state(self, state):
+        """Restore Automate mode state if in automate mode"""
+        if self._is_automate_mode and hasattr(self, 'automate_widget') and self.automate_widget:
+            self.automate_widget.restore_automate_state(state)
+
     def _apply_highlighting(self):
         """Highlight content based on current mode"""
         if self._is_bdd_mode:
