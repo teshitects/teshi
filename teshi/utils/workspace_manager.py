@@ -179,7 +179,17 @@ class WorkspaceManager(QObject):
                     }
                 except:
                     pass
-                
+
+            # Save Git dock state
+            if hasattr(main_window, 'git_dock'):
+                try:
+                    workspace_data['dock_states']['git'] = {
+                        'visible': main_window.git_dock.isVisible(),
+                        'width': main_window.git_dock.width()
+                    }
+                except:
+                    pass
+
             # Save current left dock state
             if hasattr(main_window, 'current_left_dock'):
                 try:
@@ -313,20 +323,34 @@ class WorkspaceManager(QObject):
                 main_window.search_dock.show()
             else:
                 main_window.search_dock.hide()
-            
+
             # Save width for later restoration
             search_width = search_state.get('width')
-            
+
+        # Restore Git dock
+        git_width = None
+        if hasattr(main_window, 'git_dock') and 'git' in dock_states:
+            git_state = dock_states['git']
+            if git_state.get('visible', False):
+                main_window.git_dock.show()
+            else:
+                main_window.git_dock.hide()
+
+            # Save width for later restoration
+            git_width = git_state.get('width')
+
         # Restore current left dock state
         current_left_dock = workspace_data.get('current_left_dock', None)
         if hasattr(main_window, 'current_left_dock'):
             main_window.current_left_dock = current_left_dock
-            # Initially hide both docks, then show the appropriate one
+            # Initially hide all left docks, then show the appropriate one
             if hasattr(main_window, 'project_dock'):
                 main_window.project_dock.hide()
             if hasattr(main_window, 'search_dock'):
                 main_window.search_dock.hide()
-                
+            if hasattr(main_window, 'git_dock'):
+                main_window.git_dock.hide()
+
             # Apply the current dock visibility based on saved state after a short delay
             def restore_dock_visibility():
                 if current_left_dock == 'project':
@@ -335,7 +359,13 @@ class WorkspaceManager(QObject):
                 elif current_left_dock == 'search':
                     if hasattr(main_window, 'search_dock'):
                         main_window.search_dock.show()
-                # If None or any other value, keep both hidden
+                elif current_left_dock == 'git':
+                    if hasattr(main_window, 'git_dock'):
+                        main_window.git_dock.show()
+                        # Refresh Git status when showing Git dock
+                        if hasattr(main_window, 'git_widget'):
+                            main_window.git_widget.refresh()
+                # If None or any other value, keep all hidden
             
             # Use QTimer to delay visibility restoration
             from PySide6.QtCore import QTimer
@@ -350,6 +380,8 @@ class WorkspaceManager(QObject):
                 main_window.resizeDocks([main_window.bdd_mind_map_dock], [bdd_width], Qt.Horizontal)
             if search_width and search_width > 0 and hasattr(main_window, 'search_dock'):
                 main_window.resizeDocks([main_window.search_dock], [search_width], Qt.Horizontal)
+            if git_width and git_width > 0 and hasattr(main_window, 'git_dock'):
+                main_window.resizeDocks([main_window.git_dock], [git_width], Qt.Horizontal)
         
         QTimer.singleShot(100, restore_dock_widths)
         

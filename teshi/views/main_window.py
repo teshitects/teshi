@@ -10,6 +10,7 @@ from teshi.views.docks.project_explorer import ProjectExplorer
 from teshi.views.docks.bdd_mind_map import BDDMindMapDock
 from teshi.views.docks.search_results import SearchResultsDock
 from teshi.views.docks.ai_chat import AIChatDock
+from teshi.views.docks.git_dock import GitDock
 from teshi.views.widgets.editor_widget import EditorWidget
 # from teshi.views.widgets.testcase_search_dialog import TestcaseSearchDialog  # No longer used
 from teshi.utils.workspace_manager import WorkspaceManager
@@ -117,6 +118,32 @@ class MainWindow(QMainWindow):
         settings_action = QAction("Settings", self)
         settings_menu.addAction(settings_action)
         settings_action.triggered.connect(self._show_settings_dialog)
+
+        # Git Menu
+        git_menu = menubar.addMenu("Git")
+        git_refresh_action = QAction("Refresh Status", self)
+        git_refresh_action.triggered.connect(self._git_refresh)
+        git_menu.addAction(git_refresh_action)
+
+        git_menu.addSeparator()
+
+        git_stage_action = QAction("Stage All", self)
+        git_stage_action.triggered.connect(self._git_stage_all)
+        git_menu.addAction(git_stage_action)
+
+        git_commit_action = QAction("Commit...", self)
+        git_commit_action.triggered.connect(self._git_commit)
+        git_menu.addAction(git_commit_action)
+
+        git_menu.addSeparator()
+
+        git_pull_action = QAction("Pull", self)
+        git_pull_action.triggered.connect(self._git_pull)
+        git_menu.addAction(git_pull_action)
+
+        git_push_action = QAction("Push", self)
+        git_push_action.triggered.connect(self._git_push)
+        git_menu.addAction(git_push_action)
 
     def _show_about_dialog(self):
         from teshi.views.widgets.about_dialog import AboutDialog
@@ -258,37 +285,42 @@ class MainWindow(QMainWindow):
         # Temporarily show docks to save their correct dimensions
         project_was_visible = self.project_dock.isVisible()
         search_was_visible = self.search_dock.isVisible()
+        git_was_visible = self.git_dock.isVisible() if hasattr(self, 'git_dock') else False
         bdd_was_visible = self.bdd_mind_map_dock.isVisible()
         ai_chat_was_visible = self.ai_chat_dock.isVisible()
-        
+
         # Save dock dimensions before cleanup
         if not project_was_visible:
             self.project_dock.show()
         if not search_was_visible:
             self.search_dock.show()
+        if hasattr(self, 'git_dock') and not git_was_visible:
+            self.git_dock.show()
         if not bdd_was_visible:
             self.bdd_mind_map_dock.show()
         if not ai_chat_was_visible:
             self.ai_chat_dock.show()
-        
+
         # Force update of the UI to ensure dimensions are correct
         from PySide6.QtWidgets import QApplication
         QApplication.processEvents()
-        
+
         # Stop index manager
         try:
             self.index_manager.stop_file_watcher()
         except:
             pass  # Ignore errors during cleanup
-        
+
         # Save workspace with correct dock dimensions
         self.workspace_manager.save_workspace(self)
-        
+
         # Restore original visibility state before closing
         if not project_was_visible:
             self.project_dock.hide()
         if not search_was_visible:
             self.search_dock.hide()
+        if hasattr(self, 'git_dock') and not git_was_visible:
+            self.git_dock.hide()
         if not bdd_was_visible:
             self.bdd_mind_map_dock.hide()
         if not ai_chat_was_visible:
@@ -342,9 +374,20 @@ class MainWindow(QMainWindow):
         self.search_dock.setWidget(self.search_results)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.search_dock)
         self.search_dock.hide()
-        
+
+        # Add Git action to left toolbar (below search button)
+        action_git = left_toolbar.addAction("Git")
+        action_git.triggered.connect(lambda: self.switch_to_git_dock())
+        self.git_dock = QDockWidget("Git", self)
+        self.git_widget = GitDock(self.project_path)
+        self.git_widget.file_open_requested.connect(self.open_file_in_tab)
+        self.git_widget.state_changed.connect(self.workspace_manager.trigger_save)
+        self.git_dock.setWidget(self.git_widget)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.git_dock)
+        self.git_dock.hide()
+
         # Track which dock is currently visible in the left area
-        self.current_left_dock = None  # None, 'project', or 'search'
+        self.current_left_dock = None  # None, 'project', 'search', or 'git'
 
         # Right Toolbar
         right_toolbar = QToolBar("RightToolbar", self)
@@ -690,15 +733,17 @@ class MainWindow(QMainWindow):
             self.project_dock.hide()
             self.current_left_dock = None
         else:
-            # Hide search dock if visible
-            if self.search_dock.isVisible():
+            # Hide other docks if visible
+            if hasattr(self, 'search_dock') and self.search_dock.isVisible():
                 self.search_dock.hide()
+            if hasattr(self, 'git_dock') and self.git_dock.isVisible():
+                self.git_dock.hide()
             # Show project dock
             self.project_dock.show()
             self.current_left_dock = 'project'
         # Trigger workspace save
         self.workspace_manager.trigger_save()
-        
+
     def switch_to_search_dock(self):
         """Switch to search results dock"""
         if self.current_left_dock == 'search':
@@ -706,12 +751,33 @@ class MainWindow(QMainWindow):
             self.search_dock.hide()
             self.current_left_dock = None
         else:
-            # Hide project dock if visible
+            # Hide other docks if visible
             if self.project_dock.isVisible():
                 self.project_dock.hide()
+            if hasattr(self, 'git_dock') and self.git_dock.isVisible():
+                self.git_dock.hide()
             # Show search dock
             self.search_dock.show()
             self.current_left_dock = 'search'
+        # Trigger workspace save
+        self.workspace_manager.trigger_save()
+
+    def switch_to_git_dock(self):
+        """Switch to Git dock"""
+        if self.current_left_dock == 'git':
+            # If git is already visible, hide it
+            self.git_dock.hide()
+            self.current_left_dock = None
+        else:
+            # Hide other docks if visible
+            if self.project_dock.isVisible():
+                self.project_dock.hide()
+            if self.search_dock.isVisible():
+                self.search_dock.hide()
+            # Show git dock and refresh status
+            self.git_dock.show()
+            self.git_widget.refresh()
+            self.current_left_dock = 'git'
         # Trigger workspace save
         self.workspace_manager.trigger_save()
     
@@ -999,3 +1065,33 @@ class MainWindow(QMainWindow):
             if isinstance(widget, EditorWidget):
                 return widget.get_highlight_keywords()
         return []
+
+    # Git methods
+    def _git_refresh(self):
+        """Refresh Git status"""
+        if hasattr(self, 'git_widget'):
+            self.git_widget.refresh()
+            self.show_message("Git status refreshed", 2000)
+
+    def _git_stage_all(self):
+        """Stage all changes"""
+        if hasattr(self, 'git_widget'):
+            self.git_widget.git_service.stage_all()
+
+    def _git_commit(self):
+        """Open commit dialog"""
+        if hasattr(self, 'git_widget'):
+            # Show Git dock and focus on commit input
+            self.git_dock.show()
+            self.current_left_dock = 'git'
+            self.git_widget.commit_input.setFocus()
+
+    def _git_pull(self):
+        """Pull from remote"""
+        if hasattr(self, 'git_widget'):
+            self.git_widget.git_service.pull()
+
+    def _git_push(self):
+        """Push to remote"""
+        if hasattr(self, 'git_widget'):
+            self.git_widget.git_service.push()
