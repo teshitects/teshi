@@ -46,6 +46,13 @@ class WorkspaceManager(QObject):
             'current_tab_index': main_window.tabs.currentIndex() if hasattr(main_window, 'tabs') else -1,
             'dock_states': {}
         }
+
+        # Add global automate layout state (independent from individual tab states)
+        workspace_data['automate_layout'] = {
+            'browser_width': None,
+            'result_width': None,
+            'logger_height': None
+        }
         
         # Save open tabs
         if hasattr(main_window, 'tabs'):
@@ -190,6 +197,18 @@ class WorkspaceManager(QObject):
             if hasattr(main_window, '_global_automate_mode'):
                 try:
                     workspace_data['automate_mode'] = main_window._global_automate_mode
+                except:
+                    pass
+
+            # Save global automate layout from active tab
+            if hasattr(main_window, 'tabs'):
+                try:
+                    current_tab = main_window.tabs.currentWidget()
+                    if current_tab and hasattr(current_tab, 'get_global_layout_state'):
+                        layout_state = current_tab.get_global_layout_state()
+                        workspace_data['automate_layout'] = layout_state
+                        # Also store in main window for direct access
+                        main_window._global_automate_layout = layout_state
                 except:
                     pass
 
@@ -415,6 +434,20 @@ class WorkspaceManager(QObject):
         
         # Delay tab restoration to allow window to show first
         QTimer.singleShot(50, restore_tabs)
+
+        # Restore global automate layout
+        automate_layout = workspace_data.get('automate_layout', {})
+        if automate_layout:
+            main_window._global_automate_layout = automate_layout
+            # Apply layout to all existing tabs
+            def apply_global_layout():
+                for i in range(main_window.tabs.count()):
+                    widget = main_window.tabs.widget(i)
+                    if widget and hasattr(widget, 'apply_global_layout_state'):
+                        widget.apply_global_layout_state(automate_layout)
+
+            # Apply layout after tabs are restored
+            QTimer.singleShot(1500, apply_global_layout)
 
         # Restore Automate widget states after tabs are restored
         automate_data = workspace_data.get('automate_data', {})

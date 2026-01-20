@@ -67,7 +67,7 @@ class AutomateModeWidget(QWidget):
         
         # Splitter 0: Browser (Left) vs Main (Center+Right)
         self.root_splitter = QSplitter(Qt.Horizontal)
-        self.root_splitter.splitterMoved.connect(self._trigger_workspace_save)
+        self.root_splitter.splitterMoved.connect(self._on_splitter_moved)
 
         # Browser Widget (Left)
         # Assuming we can get project dir from notebook path or passed in.
@@ -81,12 +81,12 @@ class AutomateModeWidget(QWidget):
 
         # Splitter 1: Top (Canvas+Side) vs Bottom (Logger)
         self.main_splitter = QSplitter(Qt.Vertical)
-        self.main_splitter.splitterMoved.connect(self._trigger_workspace_save)
+        self.main_splitter.splitterMoved.connect(self._on_splitter_moved)
 
 
         # Splitter 2: Canvas vs Right Side (Raw/Result)
         self.center_splitter = QSplitter(Qt.Horizontal)
-        self.center_splitter.splitterMoved.connect(self._trigger_workspace_save)
+        self.center_splitter.splitterMoved.connect(self._on_splitter_moved)
 
         
         # Canvas Container
@@ -589,6 +589,16 @@ class AutomateModeWidget(QWidget):
     def restore_automate_state(self, state):
         """Restore Automate interface state from workspace"""
         try:
+            # Check for global layout state from main window first
+            if self.parent_widget:
+                main_window = self.parent_widget
+                while main_window and not hasattr(main_window, 'workspace_manager'):
+                    main_window = main_window.parent()
+
+                if main_window and hasattr(main_window, '_global_automate_layout'):
+                    # Apply global layout first (workspace-level settings)
+                    self.apply_global_layout_state(main_window._global_automate_layout)
+
             # Restore browser search text
             if 'browser_search_text' in state:
                 self.browser_widget.search_bar.setText(state['browser_search_text'])
@@ -655,5 +665,83 @@ class AutomateModeWidget(QWidget):
 
             if main_window and hasattr(main_window, 'workspace_manager'):
                 main_window.workspace_manager.trigger_save()
+
+    def get_global_layout_state(self):
+        """Get global layout state that should be shared across all automate tabs"""
+        return {
+            'browser_width': self.root_splitter.sizes()[0] if len(self.root_splitter.sizes()) > 0 else None,
+            'result_width': self.center_splitter.sizes()[1] if len(self.center_splitter.sizes()) > 1 else None,
+            'logger_height': self.main_splitter.sizes()[1] if len(self.main_splitter.sizes()) > 1 else None
+        }
+
+    def apply_global_layout_state(self, state, broadcast=False):
+        """Apply global layout state from workspace
+
+        Args:
+            state: The layout state to apply
+            broadcast: Whether to broadcast the change to other tabs
+        """
+        if not state:
+            return
+
+        # Apply browser width
+        if state.get('browser_width') is not None:
+            current_sizes = self.root_splitter.sizes()
+            if len(current_sizes) == 2:
+                total_width = sum(current_sizes)
+                new_sizes = [state['browser_width'], total_width - state['browser_width']]
+                self.root_splitter.setSizes(new_sizes)
+
+        # Apply result width
+        if state.get('result_width') is not None:
+            current_sizes = self.center_splitter.sizes()
+            if len(current_sizes) == 2:
+                total_width = sum(current_sizes)
+                new_sizes = [total_width - state['result_width'], state['result_width']]
+                self.center_splitter.setSizes(new_sizes)
+
+        # Apply logger height
+        if state.get('logger_height') is not None:
+            current_sizes = self.main_splitter.sizes()
+            if len(current_sizes) == 2:
+                total_height = sum(current_sizes)
+                new_sizes = [total_height - state['logger_height'], state['logger_height']]
+                self.main_splitter.setSizes(new_sizes)
+
+        # Broadcast layout change to all tabs if requested
+        if broadcast and self.parent_widget:
+            main_window = self.parent_widget
+            while main_window and not hasattr(main_window, 'workspace_manager'):
+                main_window = main_window.parent()
+
+            if main_window and hasattr(main_window, 'workspace_manager'):
+                # Update the global layout in main window
+                main_window._global_automate_layout = self.get_global_layout_state()
+                # Notify other tabs through workspace manager
+                main_window.workspace_manager.trigger_save()
+
+    def _on_splitter_moved(self, pos, index):
+        """Handle splitter move events for global layout updates"""
+        # First, trigger regular workspace save
+        self._trigger_workspace_save()
+
+        # Then, if this is the active tab, update global layout and broadcast to other tabs
+        if self.parent_widget:
+            main_window = self.parent_widget
+            while main_window and not hasattr(main_window, 'tabs'):
+                main_window = main_window.parent()
+
+            if main_window and hasattr(main_window, 'tabs'):
+                # Check if this widget is the current active tab
+                if main_window.tabs.currentWidget() == self:
+                    # Update global layout
+                    global_layout = self.get_global_layout_state()
+                    main_window._global_automate_layout = global_layout
+
+                    # Apply to all other automate tabs (with broadcast=False to avoid recursion)
+                    for i in range(main_window.tabs.count()):
+                        widget = main_window.tabs.widget(i)
+                        if widget and widget != self and hasattr(widget, 'apply_global_layout_state'):
+                            widget.apply_global_layout_state(global_layout, broadcast=False)
 
 
