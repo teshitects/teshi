@@ -14,6 +14,7 @@ class JupyterNodeModel(object):
         self.result = ""
         self.code_changed = False
         self.params = {}
+        self.node_type = ""
         super().__init__()
 
     def __str__(self):
@@ -30,5 +31,6 @@ class JupyterNodeModel(object):
             "y": self.y,
             "result": self.result,
             "uuid": self.uuid,
-            "params": self.params
+            "params": self.params,
+            "node_type": self.node_type
             }

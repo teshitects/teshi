@@ -68,9 +68,10 @@ class AutomateBrowserWidget(QWidget):
     
     nodeSelected = Signal(str) # Emits code when a node is clicked, maybe?
 
-    def __init__(self, project_dir, parent=None):
+    def __init__(self, project_dir, node_registry=None, parent=None):
         super().__init__(parent)
         self.project_dir = project_dir
+        self.node_registry = node_registry
         self.extracted_nodes = {} # {title: code}
         self.parent_widget = parent
 
@@ -123,14 +124,28 @@ class AutomateBrowserWidget(QWidget):
 
 
     def refresh_project_nodes(self):
-        """Scans project directory for .ipynb files and extracts node titles."""
+        """Loads nodes from the central registry and optionally scans directory for new ones."""
         self.project_list.clear()
         self.extracted_nodes = {}
         
+        # 1. Load from Registry (Primary source)
+        if self.node_registry:
+            all_nodes = self.node_registry.get_all_nodes()
+            for node_type, data in all_nodes.items():
+                title = data.get('title', node_type)
+                code = data.get('code', '')
+                if title not in self.extracted_nodes:
+                    self.extracted_nodes[title] = code
+                    from PySide6.QtWidgets import QListWidgetItem
+                    item = QListWidgetItem(title)
+                    item.setData(Qt.UserRole, code)
+                    self.project_list.addItem(item)
+
+        # 2. Supplemental scan (optional, but helpful for migrating existing project)
         if not self.project_dir or not os.path.exists(self.project_dir):
             return
 
-        # Simple recursive scan
+        # Simple recursive scan to find unregistered nodes
         for root, dirs, files in os.walk(self.project_dir):
             for file in files:
                 if file.endswith(".ipynb"):
@@ -156,6 +171,10 @@ class AutomateBrowserWidget(QWidget):
                                         item = QListWidgetItem(title)
                                         item.setData(Qt.UserRole, source)
                                         self.project_list.addItem(item)
+                                        
+                                        # Auto-register found node if registry is available
+                                        if self.node_registry:
+                                            self.node_registry.register_node(title, source)
                                         
                     except Exception as e:
                         print(f"Error reading {file_path}: {e}")

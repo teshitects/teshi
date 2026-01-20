@@ -121,17 +121,17 @@ class JupyterGraphNode(QGraphicsItem):
                 
                 if def_data['type'] == 'select':
                     widget = QComboBox()
+                    widget.setObjectName("input_widget") # ID for finding later
                     widget.addItems(def_data.get('options', []))
-                    current_val = self.data_model.params.get(label, def_data['default'])
-                    widget.setCurrentText(str(current_val))
                     widget.currentTextChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
                 elif def_data['type'] == 'number':
                     widget = QSpinBox()
-                    widget.setValue(int(self.data_model.params.get(label, def_data.get('default', 0))))
+                    widget.setObjectName("input_widget")
+                    widget.setRange(-999999, 999999) # Set reasonable range
                     widget.valueChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
                 else: # text
                     widget = QLineEdit()
-                    widget.setText(str(self.data_model.params.get(label, def_data.get('default', ''))))
+                    widget.setObjectName("input_widget")
                     widget.textChanged.connect(lambda val, l=label: self.on_param_changed(l, val))
                 
                 layout.addWidget(widget)
@@ -139,6 +139,25 @@ class JupyterGraphNode(QGraphicsItem):
                 proxy = QGraphicsProxyWidget(self)
                 proxy.setWidget(container)
                 self.input_proxies[label] = proxy
+            
+            # --- Always Update Values from params ---
+            proxy = self.input_proxies[label]
+            widget = proxy.widget().findChild(QWidget, "input_widget")
+            if widget:
+                # Block signals to prevent redundant on_param_changed calls
+                widget.blockSignals(True)
+                if isinstance(widget, QComboBox):
+                    current_val = self.data_model.params.get(label, def_data.get('default', ''))
+                    widget.setCurrentText(str(current_val))
+                elif isinstance(widget, QSpinBox):
+                    current_val = self.data_model.params.get(label, def_data.get('default', 0))
+                    try:
+                        widget.setValue(int(current_val))
+                    except: pass
+                elif isinstance(widget, QLineEdit):
+                    current_val = self.data_model.params.get(label, def_data.get('default', ''))
+                    widget.setText(str(current_val))
+                widget.blockSignals(False)
             
             # Position the proxy
             proxy = self.input_proxies[label]

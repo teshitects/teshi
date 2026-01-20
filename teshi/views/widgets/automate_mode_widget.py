@@ -1,3 +1,4 @@
+import os
 import sys
 import uuid
 import datetime
@@ -19,6 +20,7 @@ from teshi.views.widgets.component.automate_connection_item import ConnectionIte
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.config.automate_editor_config import AutomateEditorConfig
 from teshi.views.widgets.automate_browser_widget import AutomateBrowserWidget
+from teshi.services.node_registry_service import NodeRegistryService
 from teshi.utils import graph_util
 from teshi.utils.yaml_graph_util import save_graph_to_yaml
 
@@ -43,6 +45,16 @@ class AutomateModeWidget(QWidget):
 
         self.thread1 = None
         self.parent_widget = parent
+
+        # Initialize Node Registry Service
+        # Try to find project root by looking for .teshi
+        project_root = self.notebook_dir
+        while project_root and project_root != str(Path(project_root).parent):
+            if  os.path.exists(os.path.join(project_root, '.teshi')):
+                break
+            project_root = str(Path(project_root).parent)
+        
+        self.node_registry = NodeRegistryService(project_root)
 
         self.setup_ui()
         self.load_notebook_data()
@@ -75,7 +87,7 @@ class AutomateModeWidget(QWidget):
         # But 'notebook_dir' is usually just the folder of the current file.
         # Ideally we should use the parent project root if possible.
         # For now, let's use self.notebook_dir as a starting point.
-        self.browser_widget = AutomateBrowserWidget(self.notebook_dir, self)
+        self.browser_widget = AutomateBrowserWidget(self.notebook_dir, self.node_registry, self)
         self.root_splitter.addWidget(self.browser_widget)
 
 
@@ -187,10 +199,43 @@ class AutomateModeWidget(QWidget):
              
         self.notebook = load_notebook(self.notebook_path)
         
-        if self.notebook.metadata.get("scene_data"):
-            items_data = self.notebook.metadata.get("scene_data")
-        else:
-            items_data = {}
+        # Load items_data from ipynb metadata (legacy/fallback)
+        ipynb_items_data = self.notebook.metadata.get("scene_data", {})
+        
+        # Problem 3: Also try to load from YAML file (primary source for params)
+        yaml_path = str(Path(self.file_path).with_suffix('.yaml'))
+        yaml_graph_data = {}
+        if os.path.exists(yaml_path):
+            from teshi.utils.yaml_graph_util import load_graph_from_yaml
+            yaml_graph_data = load_graph_from_yaml(yaml_path)
+        
+        # Build items_data from YAML (keyed by title for compatibility)
+        yaml_items_data = {}
+        for node_info in yaml_graph_data.get('nodes', []):
+            title = node_info.get('title', '')
+            if title:
+                yaml_items_data[title] = {
+                    'x': node_info.get('pos', [0, 0])[0],
+                    'y': node_info.get('pos', [0, 0])[1],
+                    'params': node_info.get('params', {}),
+                    'node_type': node_info.get('node_type', ''),
+                    'uuid': node_info.get('id', '')
+                }
+        
+        # Merge: YAML takes priority for params/pos, ipynb for children/connections
+        items_data = {}
+        all_titles = set(ipynb_items_data.keys()) | set(yaml_items_data.keys())
+        for title in all_titles:
+            ipynb_item = ipynb_items_data.get(title, {})
+            yaml_item = yaml_items_data.get(title, {})
+            items_data[title] = {
+                'x': yaml_item.get('x', ipynb_item.get('x', 0)),
+                'y': yaml_item.get('y', ipynb_item.get('y', 0)),
+                'params': yaml_item.get('params', ipynb_item.get('params', {})),
+                'node_type': yaml_item.get('node_type', ipynb_item.get('node_type', '')),
+                'uuid': yaml_item.get('uuid', ipynb_item.get('uuid', '')),
+                'children': ipynb_item.get('children', []),  # Connections from ipynb
+            }
 
         # Init Scene and View
         self.scene = NodeSketchpadScene(self)
@@ -228,10 +273,26 @@ class AutomateModeWidget(QWidget):
                  rect.setPos(items_data[node.title]['x'], items_data[node.title]['y'])
                  if 'params' in items_data[node.title]:
                      rect.data_model.params = items_data[node.title]['params']
-                     rect.update_input_widgets()
+                 
+                 # Problem 3: If YAML has node_type, try to load code from registry
+                 node_type = items_data[node.title].get('node_type')
+                 if node_type:
+                     rect.data_model.node_type = node_type
+                     registry_data = self.node_registry.get_node_data(node_type)
+                     if registry_data:
+                         rect.data_model.code = registry_data['code']
+                         # Important: If it's the first time, we might need to update title too
+                         # but title is already set from notebook cells loop above
+                 
+                 rect.update_input_widgets()
             else:
                  rect.setPos(index * 300, 0)
             
+            # Register code if not already in registry
+            if rect.data_model.code:
+                node_type = self.node_registry.register_node(rect.data_model.title, rect.data_model.code)
+                rect.data_model.node_type = node_type
+
             rect.signals.nodeClicked.connect(self.update_widget)
             self.scene.addItem(rect)
             
@@ -303,6 +364,11 @@ class AutomateModeWidget(QWidget):
                     new_title = item.data_model.code.split('\n')[0]
                     if new_title != item.data_model.title:
                         self.item_title_changed(item, new_title)
+                    
+                    # Register updated code
+                    node_type = self.node_registry.register_node(item.data_model.title, item.data_model.code)
+                    item.data_model.node_type = node_type
+                    
                     self.save_notebook_file() # Auto save to file
                     break
 
@@ -372,26 +438,34 @@ class AutomateModeWidget(QWidget):
         
         save_notebook(self.notebook, self.notebook_path)
 
-        # E. Sync to YAML if original file is .yaml
-        if self.file_path.endswith('.yaml'):
-             self.sync_to_yaml()
+        # E. Always sync to YAML file (same name as source but with .yaml extension)
+        # This stores node references and params separately from code
+        self.sync_to_yaml()
 
     def sync_to_yaml(self):
-        """Sync current graph structure and params to original YAML file"""
+        """Sync current graph structure and params to YAML file (always alongside the test case)"""
+        # Generate yaml path from file_path (replace extension with .yaml)
+        yaml_path = str(Path(self.file_path).with_suffix('.yaml'))
+        
         nodes_data = []
         connections_data = []
-        
+
         # Nodes
         for item in self.scene.items():
             if isinstance(item, JupyterGraphNode):
                  node_data = {
                         "id": item.data_model.uuid,
                         "title": item.data_model.title,
+                        "node_type": item.data_model.node_type, # Added for Problem 3
                         "pos": [item.pos().x(), item.pos().y()],
                         "params": item.data_model.params
                     }
                  nodes_data.append(node_data)
-        
+
+                 # Ensure it is registered
+                 if item.data_model.code:
+                     self.node_registry.register_node(item.data_model.title, item.data_model.code)
+
         # Connections
         visited_conns = set()
         for item in self.scene.items():
@@ -412,7 +486,7 @@ class AutomateModeWidget(QWidget):
         }
         
         try:
-             save_graph_to_yaml(graph_data, self.file_path)
+             save_graph_to_yaml(graph_data, yaml_path)
         except Exception as e:
              print(f"Failed to sync to YAML: {e}")
 
