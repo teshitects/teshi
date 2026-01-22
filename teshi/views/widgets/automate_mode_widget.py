@@ -5,6 +5,7 @@ import datetime
 from pathlib import Path
 
 from teshi.utils.logger import get_logger
+from teshi.utils import graph_util
 
 from PySide6 import QtGui, QtWidgets, QtCore
 from PySide6.QtCore import QSettings, Qt, Signal, Slot
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QColor, QAction
 
 from teshi.controllers.automate_controller import AutomateController
-from teshi.models.jupyter_node_model import JupyterNodeModel
+from teshi.models.nodes.base_node import BaseNode
 from teshi.views.widgets.automate_widget import NodeSketchpadView, NodeSketchpadScene, JupyterGraphNode
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.config.automate_editor_config import AutomateEditorConfig
@@ -310,7 +311,7 @@ class AutomateModeWidget(QWidget):
         # 5. Update Browser List
         self.update_browser_canvas_nodes()
 
-    @Slot(JupyterNodeModel)
+    @Slot(BaseNode)
     def on_node_added(self, node_model):
         rect = JupyterGraphNode(node_model.title, node_model.code)
         rect.data_model = node_model
@@ -320,7 +321,7 @@ class AutomateModeWidget(QWidget):
         self.scene.addItem(rect)
         self.update_browser_canvas_nodes()
 
-    @Slot(JupyterNodeModel)
+    @Slot(BaseNode)
     def on_node_updated(self, node_model):
         # find item by uuid
         for item in self.scene.items():

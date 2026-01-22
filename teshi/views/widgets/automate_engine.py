@@ -12,7 +12,7 @@ from PySide6.QtWidgets import QDockWidget, QMainWindow, QListWidget, QTabWidget,
     QVBoxLayout, QApplication, QPushButton
 
 from src.controllers.graph_execute_controller import GraphExecuteController
-from src.models.JupyterNodeModel import JupyterNodeModel
+from teshi.models.nodes.raw_node import RawCodeNode
 from src.utils.yaml_graph_util import load_graph_from_yaml, save_graph_to_yaml
 from src.managers.node_lib_manager import NodeLibManager
 from src.views.widgets.yaml_tab import YamlTab
@@ -75,7 +75,7 @@ class JupyterVisualRunner(QMainWindow):
             # Get code from library, fallback to empty string
             node_code = self.node_lib_manager.get_node_code(node_title)
             
-            node_model = JupyterNodeModel(node_title, node_code)
+            node_model = RawCodeNode(node_title, node_code)
             node_model.tab_id = tab_id
             node_model.uuid = node_data.get('id', str(uuid.uuid4()))
             node_model.params = node_data.get('params', {})
