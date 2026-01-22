@@ -1,14 +1,15 @@
 import sys
 import os
 
-# 添加项目根目录到 Python 路径（用于 PyInstaller 打包）
+# Add application path to sys.path,
 if getattr(sys, 'frozen', False):
-    # 运行在打包后的 exe 中
+    # Running in a PyInstaller bundle
     application_path = sys._MEIPASS
 else:
-    # 运行在正常 Python 环境中
+    # Running in normal Python environment
     application_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Insert the application path at the start of sys.path
 sys.path.insert(0, application_path)
 
 from PySide6.QtWidgets import QApplication

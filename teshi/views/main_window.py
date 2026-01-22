@@ -361,6 +361,9 @@ class MainWindow(QMainWindow):
         self.project_dock.setWidget(self.explorer)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.project_dock)
         self.project_dock.hide()
+        # Set default dock width
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(100, lambda: self.resizeDocks([self.project_dock], [300], Qt.Horizontal))
         
         # Add search action to left toolbar (below project button)
         action_search = left_toolbar.addAction(QIcon(resource_path("assets/icons/search.png")), "Search")
@@ -374,6 +377,8 @@ class MainWindow(QMainWindow):
         self.search_dock.setWidget(self.search_results)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.search_dock)
         self.search_dock.hide()
+        # Set default dock width
+        QTimer.singleShot(100, lambda: self.resizeDocks([self.search_dock], [300], Qt.Horizontal))
 
         # Add Git action to left toolbar (below search button)
         action_git = left_toolbar.addAction("Git")
@@ -385,6 +390,8 @@ class MainWindow(QMainWindow):
         self.git_dock.setWidget(self.git_widget)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.git_dock)
         self.git_dock.hide()
+        # Set default dock width
+        QTimer.singleShot(100, lambda: self.resizeDocks([self.git_dock], [300], Qt.Horizontal))
 
         # Track which dock is currently visible in the left area
         self.current_left_dock = None  # None, 'project', 'search', or 'git'
@@ -411,6 +418,8 @@ class MainWindow(QMainWindow):
         self.bdd_mind_map_dock.setWidget(self.bdd_mind_map)
         self.addDockWidget(Qt.RightDockWidgetArea, self.bdd_mind_map_dock)
         self.bdd_mind_map_dock.hide()
+        # Set default dock width
+        QTimer.singleShot(100, lambda: self.resizeDocks([self.bdd_mind_map_dock], [300], Qt.Horizontal))
 
         # Add AI Chat dock to right toolbar
         action_ai = right_toolbar.addAction("AI Chat")
@@ -420,6 +429,8 @@ class MainWindow(QMainWindow):
         self.ai_chat_dock.setWidget(self.ai_chat)
         self.addDockWidget(Qt.RightDockWidgetArea, self.ai_chat_dock)
         self.ai_chat_dock.hide()
+        # Set default dock width
+        QTimer.singleShot(100, lambda: self.resizeDocks([self.ai_chat_dock], [300], Qt.Horizontal))
 
         # central tab widget
         self.tabs = QTabWidget()
