@@ -6,8 +6,8 @@ import ast
 from teshi.config.automate_editor_config import AutomateEditorConfig
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.views.widgets.component.item_signals import ItemSignals
-from teshi.models.nodes.raw_node import RawCodeNode
-from teshi.models.nodes.base_node import BaseNode
+from teshi.models.jupyter_node_model import JupyterNodeModel
+
 
 
 class JupyterGraphNode(QGraphicsItem):
@@ -15,9 +15,7 @@ class JupyterGraphNode(QGraphicsItem):
 
     def __init__(self, title, code, parent=None):
         super().__init__(parent)
-        # Default to RawCodeNode for standalone usage, 
-        # but typically this is overwritten immediately by controller's node
-        self.data_model = RawCodeNode(title, code)
+        self.data_model = JupyterNodeModel(title, code)
         if self.data_model.uuid is None:
             self.data_model.uuid = str(uuid.uuid4())
 

@@ -207,32 +207,8 @@ class NodeSketchpadView(QGraphicsView):
         if event.button() == Qt.LeftButton:
             self.leftButtonPressed(event)
         if event.button() == Qt.RightButton:
-            self.show_context_menu(event)
+            self.right_click_add_node(f"# Node {get_timestamp_str_millisecond()}", self.mapToScene(event.pos()))
         return super().mousePressEvent(event)
-
-    def show_context_menu(self, event):
-        from PySide6.QtWidgets import QMenu
-        from PySide6.QtGui import QAction
-        
-        menu = QMenu(self)
-        
-        action_raw = QAction("Add Raw Node", self)
-        action_raw.triggered.connect(lambda: self.right_click_add_node(f"Node {get_timestamp_str_millisecond()}", self.mapToScene(event.pos()), "raw"))
-        menu.addAction(action_raw)
-        
-        action_api = QAction("Add API Node", self)
-        action_api.triggered.connect(lambda: self.right_click_add_node(f"API {get_timestamp_str_millisecond()}", self.mapToScene(event.pos()), "api"))
-        menu.addAction(action_api)
-        
-        action_ui = QAction("Add UI Node", self)
-        action_ui.triggered.connect(lambda: self.right_click_add_node(f"UI {get_timestamp_str_millisecond()}", self.mapToScene(event.pos()), "ui"))
-        menu.addAction(action_ui)
-        
-        action_mobile_ui = QAction("Add Mobile UI Node", self)
-        action_mobile_ui.triggered.connect(lambda: self.right_click_add_node(f"Mobile {get_timestamp_str_millisecond()}", self.mapToScene(event.pos()), "mobile_ui"))
-        menu.addAction(action_mobile_ui)
-
-        menu.exec_(event.globalPos())
 
 
 
@@ -253,7 +229,7 @@ class NodeSketchpadView(QGraphicsView):
         self.setDragMode(QGraphicsView.NoDrag)
         self._drag_mode = False
 
-    def right_click_add_node(self, title, mouse_pos, node_type="raw"):
+    def right_click_add_node(self, title, mouse_pos):
         if self.father and hasattr(self.father, 'controller'):
-            self.father.controller.add_node(title, title if node_type=="raw" else "", (mouse_pos.x(), mouse_pos.y()), node_type=node_type)
+            self.father.controller.add_node(title, title, (mouse_pos.x(), mouse_pos.y()))
 
