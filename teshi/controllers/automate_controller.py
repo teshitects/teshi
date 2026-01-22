@@ -3,10 +3,10 @@ import uuid
 import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
-
 from PySide6.QtCore import QObject, Signal, QThread
 
-from teshi.models.jupyter_node_model import JupyterNodeModel
+from teshi.models.nodes.base_node import BaseNode
+from teshi.services.node_factory import NodeFactory
 from teshi.utils.ipynb_file_util import load_notebook, save_notebook, add_cell, remove_cell
 from teshi.utils.yaml_graph_util import save_graph_to_yaml, load_graph_from_yaml
 from teshi.utils import graph_util
@@ -23,9 +23,9 @@ class AutomateController(QObject):
     
     # Signals to notify UI of state changes
     graph_loaded = Signal() # Emitted when a project is loaded
-    node_added = Signal(JupyterNodeModel) # Emitted when a new node is added
+    node_added = Signal(BaseNode) # Emitted when a new node is added
     node_removed = Signal(str) # Emitted when a node is removed (uuid)
-    node_updated = Signal(JupyterNodeModel) # Emitted when node data changes
+    node_updated = Signal(BaseNode) # Emitted when node data changes
     execution_status_changed = Signal(str, str) # msg_id, status_str
     execution_binding = Signal(str) # binding_str
     log_message = Signal(str) # General log messages
@@ -39,11 +39,7 @@ class AutomateController(QObject):
         self.logger = get_logger()
 
         # Data State
-        self.nodes: Dict[str, JupyterNodeModel] = {} # Key: uuid (or title? original used title as key in some places, but uuid is better) 
-        # Note: Original implementation heavily relied on Title as key for graph structure. 
-        # To maintain compatibility with existing files/format, we might need to keep using Title for implementation details
-        # but try to shift to UUID where possible. 
-        # For now, let's keep the model objects which have both.
+        self.nodes: Dict[str, BaseNode] = {} # Key: uuid
         
         self.notebook = None
         
@@ -87,7 +83,7 @@ class AutomateController(QObject):
                     'x': node_info.get('pos', [0, 0])[0], 
                     'y': node_info.get('pos', [0, 0])[1],
                     'params': node_info.get('params', {}),
-                    'node_type': node_info.get('node_type', ''),
+                    'node_type': node_info.get('node_type', 'raw'), # Default to raw if missing
                     'uuid': node_info.get('id', '')
                 }
 
@@ -95,38 +91,71 @@ class AutomateController(QObject):
         self.nodes = {}
         
         # Parse Notebook Cells -> Nodes
-        notebook_nodes = []
+        # In legacy, everything was a cell. In new system, nodes generate cells.
+        # We need to reconcile. If a cell exists, it corresponds to a node.
+        # If that node doesn't have YAML metadata, we treat it as a Raw Node.
+        
+        cell_sources = {} # title -> source
         for cell in self.notebook.cells:
             if cell.cell_type == 'code':
                 title = cell.source.split('\n')[0]
-                node_model = JupyterNodeModel(title, cell.source)
-                node_model.tab_id = self.tab_id
-                notebook_nodes.append(node_model)
+                cell_sources[title] = cell.source
         
-        # Apply Metadata to Nodes
-        for node in notebook_nodes:
-            # Metadata priority: YAML > IPynb
-            yaml_item = yaml_items_data.get(node.title, {})
-            ipynb_item = ipynb_items_data.get(node.title, {})
+        # If we have YAML data, we prioritize it to create nodes
+        processed_titles = set()
+        
+        for title, y_data in yaml_items_data.items():
+            processed_titles.add(title)
+            code = cell_sources.get(title, "")
             
-            node.x = yaml_item.get('x', ipynb_item.get('x', 0))
-            node.y = yaml_item.get('y', ipynb_item.get('y', 0))
-            node.params = yaml_item.get('params', ipynb_item.get('params', {}))
-            node.node_type = yaml_item.get('node_type', ipynb_item.get('node_type', ''))
-            node.uuid = yaml_item.get('uuid', ipynb_item.get('uuid', str(uuid.uuid4())))
+            node = NodeFactory.create_node(
+                node_type=y_data['node_type'],
+                title=title,
+                pos=(y_data['x'], y_data['y']),
+                params=y_data['params'],
+                node_uuid=y_data['uuid'],
+                code=code # Used only for Raw nodes or if we want to restore exact code
+            )
+            node.tab_id = self.tab_id
             
-            # Now we have the UUID, we can use it as key
-            self.nodes[node.uuid] = node
-            
-            # Connections (Children) come from IPynb metadata usually, or YAML
+            # Legacy children handling
+            # Check ipynb metadata first as legacy
+            ipynb_item = ipynb_items_data.get(title, {})
             node.children = ipynb_item.get('children', [])
+            
+            # We don't have explicit children in YAML nodes list usually, 
+            # we rely on the connections list in YAML (not loaded here yet) or internal logic.
+            # But the original code trusted ipynb children mostly.
+            
+            self.nodes[node.uuid] = node
 
-            # Load code from registry if needed
-            if node.node_type:
-                registry_data = self.node_registry.get_node_data(node.node_type)
-                if registry_data:
-                    node.code = registry_data['code']
+        # Handle cells that are not in YAML (Legacy manual cells?)
+        # Treat them as Raw Nodes
+        for title, source in cell_sources.items():
+            if title not in processed_titles:
+                node = NodeFactory.create_node(
+                    node_type="raw",
+                    title=title,
+                    code=source,
+                    params={},
+                    node_uuid=str(uuid.uuid4())
+                )
+                node.tab_id = self.tab_id
                 
+                # Check legacy metadata
+                ipynb_item = ipynb_items_data.get(title, {})
+                node.x = ipynb_item.get('x', 0)
+                node.y = ipynb_item.get('y', 0)
+                node.children = ipynb_item.get('children', [])
+                node.uuid = ipynb_item.get('uuid', node.uuid) # Use existing UUID if available
+                
+                self.nodes[node.uuid] = node
+                
+        # Load connections from YAML if available and authoritative?
+        # The original code preferred IPynb metadata for connections. 
+        # "Connections (Children) come from IPynb metadata usually, or YAML"
+        # We'll stick to what we loaded into node.children above.
+
         # Emit Loaded Signal
         self.graph_loaded.emit()
 
@@ -221,18 +250,14 @@ class AutomateController(QObject):
         except Exception as e:
             self.logger.error(f"Failed to sync to YAML: {e}")
 
-    def add_node(self, title: str, code: str, pos=(0,0), params: dict = None):
+    def add_node(self, title: str, code: str, pos=(0,0), params: dict = None, node_type: str = "raw"):
         # Check if title already exists (titles must be unique for graph structure)
         if any(node.title == title for node in self.nodes.values()):
             self.logger.warning(f"Node with title {title} already exists.")
             return
 
-        node = JupyterNodeModel(title, code)
+        node = NodeFactory.create_node(node_type, title, pos, params, code=code)
         node.tab_id = self.tab_id
-        node.x, node.y = pos
-        node.uuid = str(uuid.uuid4())
-        if params:
-            node.params = params
         
         self.nodes[node.uuid] = node
         self.node_added.emit(node)
@@ -273,7 +298,7 @@ class AutomateController(QObject):
         self.node_updated.emit(node)
         self.save_project()
 
-    def rename_node(self, node: JupyterNodeModel, new_title: str):
+    def rename_node(self, node: BaseNode, new_title: str):
         old_title = node.title
         
         # Update references in other nodes' children
@@ -317,7 +342,7 @@ class AutomateController(QObject):
                  source.children.remove(target.title)
                  self.save_project()
 
-    def _get_node_by_uuid(self, uuid: str) -> Optional[JupyterNodeModel]:
+    def _get_node_by_uuid(self, uuid: str) -> Optional[BaseNode]:
         for node in self.nodes.values():
             if node.uuid == uuid:
                 return node
