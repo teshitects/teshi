@@ -46,21 +46,23 @@ class RawCodeEditor(QTextEdit):
         # If focus moved to the save button, don't show dialog
         if self.save_btn_ref and QApplication.focusWidget() == self.save_btn_ref:
             return
-            
+
         # If we are not visible (e.g. tab switch hidden us), maybe skip?
         # But requirement says "lose focus".
-        
+
         reply = QMessageBox.question(
-            self, 
-            "Unsaved Changes", 
-            "You have unsaved changes. Abandon modifications?", 
+            self,
+            "Unsaved Changes",
+            "You have unsaved changes. Save modifications?",
             QMessageBox.Yes | QMessageBox.No
         )
-        
+
         if reply == QMessageBox.Yes:
-            self.setPlainText(self.original_text)
+            # Save the changes
+            self.save_btn_ref.click()
         else:
-            self.setFocus()
+            # Revert to original text
+            self.setPlainText(self.original_text)
 
 
 class AutomateModeWidget(QWidget):
@@ -179,6 +181,22 @@ class AutomateModeWidget(QWidget):
         
         self.save_code_button = QPushButton("Save Code")
         self.save_code_button.setCursor(Qt.PointingHandCursor)
+        # Make save button more prominent
+        self.save_code_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+                padding: 5px 15px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+            QPushButton:pressed {
+                background-color: #0D47A1;
+            }
+        """)
         # Connect later or here? Connected in separate block before, do it here to ensure ref availability
         self.save_code_button.clicked.connect(self.update_graph_node_code)
         
