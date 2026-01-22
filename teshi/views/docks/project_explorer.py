@@ -2,7 +2,7 @@ import sys
 import os
 import shutil
 from PySide6.QtWidgets import (
-    QApplication, QTreeView, QMenu, QInputDialog, QMessageBox
+    QApplication, QTreeView, QMenu, QInputDialog, QMessageBox, QHeaderView
 )
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QIcon
 from PySide6.QtCore import Qt, Signal, QModelIndex
@@ -20,6 +20,11 @@ class ProjectExplorer(QTreeView):
         self.setWindowTitle("Project Explorer")
         self.setHeaderHidden(True)
         self.resize(600, 400)
+
+        # Enable horizontal scrolling
+        self.header().setStretchLastSection(False)
+        self.header().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
         self.target_dir = target_dir
         self.tree_builder = TreeBuilder()
