@@ -105,8 +105,6 @@ class AutomateController(QObject):
         
         # Apply Metadata to Nodes
         for node in notebook_nodes:
-            self.nodes[node.title] = node # Use title as temporary key for matching
-            
             # Metadata priority: YAML > IPynb
             yaml_item = yaml_items_data.get(node.title, {})
             ipynb_item = ipynb_items_data.get(node.title, {})
@@ -117,26 +115,17 @@ class AutomateController(QObject):
             node.node_type = yaml_item.get('node_type', ipynb_item.get('node_type', ''))
             node.uuid = yaml_item.get('uuid', ipynb_item.get('uuid', str(uuid.uuid4())))
             
+            # Now we have the UUID, we can use it as key
+            self.nodes[node.uuid] = node
+            
             # Connections (Children) come from IPynb metadata usually, or YAML
-            # Original code used ipynb_item.get('children', [])
-            # But YAML also has connections list. Let's respect YAML if available/complete, else fallback.
-            # Actually original code uses ipynb_item['children'].
             node.children = ipynb_item.get('children', [])
 
             # Load code from registry if needed
             if node.node_type:
                 registry_data = self.node_registry.get_node_data(node.node_type)
                 if registry_data:
-                    # Only override if needed or empty? 
-                    # Original logic: node_model.code is set from cell.source.
-                    # Registry is a lookup. If cell source is different from registry, it might be an override?
-                    # But original logic says: if registry_data: rect.data_model.code = registry_data['code']
-                    # This implies registry is source of truth for code content if node_type exists.
                     node.code = registry_data['code']
-            
-            # Ensure UUID is set
-            if not node.uuid:
-                node.uuid = str(uuid.uuid4())
                 
         # Emit Loaded Signal
         self.graph_loaded.emit()
@@ -155,31 +144,29 @@ class AutomateController(QObject):
 
         # 1. Sync Logic (Nodes to Notebook Cells)
         current_titles = [cell.source.split('\n')[0] for cell in self.notebook.cells if cell.cell_type == 'code']
+        node_titles = [node.title for node in self.nodes.values()]
         
         # A. Add new nodes
-        for title, node in self.nodes.items():
-            if title not in current_titles:
+        for node in self.nodes.values():
+            if node.title not in current_titles:
                 add_cell(self.notebook, node.code)
         
         # B. Remove deleted nodes
-        # Re-calc current titles after additions? No, we need to find what to remove.
-        # Actually easier to rebuild or strictly follow original logic.
-        # Original logic: Iterate notebook cells, if title not in scene_nodes, remove.
-        
         # We need to iterate backwards to remove safely
         for i in range(len(self.notebook.cells) - 1, -1, -1):
             cell = self.notebook.cells[i]
             if cell.cell_type == 'code':
                 title = cell.source.split('\n')[0]
-                if title not in self.nodes:
+                if title not in node_titles:
                     remove_cell(self.notebook, i)
 
         # C. Update code content
         for cell in self.notebook.cells:
             if cell.cell_type == 'code':
                 title = cell.source.split('\n')[0]
-                if title in self.nodes:
-                    node = self.nodes[title]
+                # Find node by title (since notebook only has titles)
+                node = next((n for n in self.nodes.values() if n.title == title), None)
+                if node:
                     if node.code != cell.source:
                         cell.source = node.code
 
@@ -235,7 +222,8 @@ class AutomateController(QObject):
             self.logger.error(f"Failed to sync to YAML: {e}")
 
     def add_node(self, title: str, code: str, pos=(0,0), params: dict = None):
-        if title in self.nodes:
+        # Check if title already exists (titles must be unique for graph structure)
+        if any(node.title == title for node in self.nodes.values()):
             self.logger.warning(f"Node with title {title} already exists.")
             return
 
@@ -246,25 +234,22 @@ class AutomateController(QObject):
         if params:
             node.params = params
         
-        self.nodes[title] = node
+        self.nodes[node.uuid] = node
         self.node_added.emit(node)
         self.save_project()
 
     def remove_node(self, uuid: str):
-        node = self._get_node_by_uuid(uuid)
+        node = self.nodes.get(uuid)
         if not node: return
         
         # Remove connections where this node is child (source -> this)
-        # Note: node.children lists where THIS node points to.
-        # We need to find nodes that point TO this node.
         title = node.title
         for other in self.nodes.values():
             if title in other.children:
                 other.children.remove(title)
         
         # Remove from nodes
-        if title in self.nodes:
-            del self.nodes[title]
+        del self.nodes[uuid]
             
         self.node_removed.emit(uuid)
         self.save_project()
@@ -297,12 +282,7 @@ class AutomateController(QObject):
                 other_node.children.remove(old_title)
                 other_node.children.append(new_title)
         
-        # Update Key in Self.Nodes
-        del self.nodes[old_title]
-        self.nodes[new_title] = node
-        
         node.title = new_title
-        # node._title = new_title # Verify if private attr exists in model, likely not needed if using public prop
 
     def update_node_params(self, uuid: str, params: dict):
         node = self._get_node_by_uuid(uuid)

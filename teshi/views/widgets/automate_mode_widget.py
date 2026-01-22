@@ -327,11 +327,11 @@ class AutomateModeWidget(QWidget):
             if isinstance(item, JupyterGraphNode) and item.data_model.uuid == node_model.uuid:
                 # Update visual properties if needed
                 item.setPos(node_model.x, node_model.y)
-                if item.data_model.title != node_model.title:
+                if item._title != node_model.title:
                     item.set_title_text(node_model.title)
-                # Code/Result updates are usually bound via data_model reference
+                # Ensure local data model is updated as well
+                item.data_model = node_model
                 # input widgets might need refresh
-                item.update_input_widgets()
                 item.update_input_widgets()
                 break
 

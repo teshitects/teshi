@@ -54,8 +54,10 @@ class TestAutomateController(unittest.TestCase):
         # System assumes first line of code IS the title.
         self.controller.add_node("Node 1", "Node 1\nprint('Hello')", (10, 20))
         
-        self.assertIn("Node 1", self.controller.nodes)
-        node = self.controller.nodes["Node 1"]
+        # Nodes is now keyed by UUID
+        self.assertEqual(len(self.controller.nodes), 1)
+        node = list(self.controller.nodes.values())[0]
+        self.assertEqual(node.title, "Node 1")
         self.assertEqual(node.code, "Node 1\nprint('Hello')")
         
         # Check YAML file created
@@ -70,8 +72,9 @@ class TestAutomateController(unittest.TestCase):
         new_controller = AutomateController(self.file_path)
         new_controller.load_project()
         
-        self.assertIn("Node 1", new_controller.nodes)
-        loaded_node = new_controller.nodes["Node 1"]
+        self.assertEqual(len(new_controller.nodes), 1)
+        loaded_node = list(new_controller.nodes.values())[0]
+        self.assertEqual(loaded_node.title, "Node 1")
         self.assertEqual(loaded_node.code, "Node 1\nprint('Hello')")
         self.assertEqual(loaded_node.x, 10) # 0 index of pos tuple
         # Wait, pos is list [x, y] in YAML
@@ -80,24 +83,27 @@ class TestAutomateController(unittest.TestCase):
         self.controller.load_project()
         self.controller.add_node("Node 1", "Node 1\ncode1", (0,0))
         
-        uuid = self.controller.nodes["Node 1"].uuid
+        node1 = next(n for n in self.controller.nodes.values() if n.title == "Node 1")
+        uuid = node1.uuid
         
         # Update Code
         self.controller.update_node_code(uuid, "Node 1\nupdated_code")
         
-        self.assertEqual(self.controller.nodes["Node 1"].code, "Node 1\nupdated_code")
+        self.assertEqual(self.controller.nodes[uuid].code, "Node 1\nupdated_code")
         
         # Rename via code change
         self.controller.update_node_code(uuid, "Node 2\nupdated_code")
         
-        self.assertNotIn("Node 1", self.controller.nodes)
-        self.assertIn("Node 2", self.controller.nodes)
-        self.assertEqual(self.controller.nodes["Node 2"].uuid, uuid)
+        # Key is still the same uuid
+        self.assertIn(uuid, self.controller.nodes)
+        self.assertEqual(self.controller.nodes[uuid].title, "Node 2")
+        self.assertEqual(self.controller.nodes[uuid].uuid, uuid)
         
     def test_remove_node(self):
         self.controller.load_project()
         self.controller.add_node("Node 1", "Node 1\ncode", (0,0))
-        uuid = self.controller.nodes["Node 1"].uuid
+        node1 = next(n for n in self.controller.nodes.values() if n.title == "Node 1")
+        uuid = node1.uuid
         
         self.controller.remove_node(uuid)
         
