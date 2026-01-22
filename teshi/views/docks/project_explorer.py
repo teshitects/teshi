@@ -25,6 +25,16 @@ class ProjectExplorer(QTreeView):
         self.header().setStretchLastSection(False)
         self.header().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        # Increase scrollbar thickness for better usability
+        self.setStyleSheet("""
+            QScrollBar:vertical {
+                width: 16px;
+            }
+            QScrollBar:horizontal {
+                height: 16px;
+            }
+        """)
 
         self.target_dir = target_dir
         self.tree_builder = TreeBuilder()

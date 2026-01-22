@@ -97,6 +97,16 @@ class SearchResultsDock(QWidget):
         # Expand tree
         self.results_tree.setExpandsOnDoubleClick(True)
         
+        # Increase scrollbar thickness for better usability
+        self.results_tree.setStyleSheet("""
+            QScrollBar:vertical {
+                width: 16px;
+            }
+            QScrollBar:horizontal {
+                height: 16px;
+            }
+        """)
+        
         layout.addWidget(self.results_tree)
         
         # Bottom button area
