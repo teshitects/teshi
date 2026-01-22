@@ -131,8 +131,6 @@ class AutomateModeWidget(QWidget):
         # Add to Center Splitter
         self.center_splitter.addWidget(self.canvas_container)
         self.center_splitter.addWidget(self.right_container)
-        self.center_splitter.setStretchFactor(0, 3) # Canvas takes 3 parts
-        self.center_splitter.setStretchFactor(1, 1) # Right side takes 1 part
         
         # Logger Area
         self.logger_container = QWidget()
@@ -149,17 +147,19 @@ class AutomateModeWidget(QWidget):
         # Add to Main Splitter
         self.main_splitter.addWidget(self.center_splitter)
         self.main_splitter.addWidget(self.logger_container)
-        self.main_splitter.setStretchFactor(0, 4)
-        self.main_splitter.setStretchFactor(1, 1)
         
-        self.main_splitter.addWidget(self.center_splitter)
-        self.main_splitter.addWidget(self.logger_container)
-        self.main_splitter.setStretchFactor(0, 4)
-        self.main_splitter.setStretchFactor(1, 1)
-
+        # Add everything to root
         self.root_splitter.addWidget(self.main_splitter)
-        self.root_splitter.setStretchFactor(0, 1) # Browser
-        self.root_splitter.setStretchFactor(1, 4) # Main Content
+        
+        # Set default absolute sizes (pixel widths)
+        # root_splitter: Browser (Left) vs Main (Right)
+        self.root_splitter.setSizes([200, 1000])
+        
+        # main_splitter: Center Splitter (Top) vs Logger (Bottom)
+        self.main_splitter.setSizes([800, 200])
+        
+        # center_splitter: Canvas (Left) vs Right Side (Raw/Result)
+        self.center_splitter.setSizes([850, 350])
         
         layout.addWidget(self.root_splitter)
         
