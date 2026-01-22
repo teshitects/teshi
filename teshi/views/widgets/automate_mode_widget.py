@@ -14,17 +14,12 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QColor, QAction
 
-from teshi.utils.graph_execute_controller import GraphExecuteController
+from teshi.controllers.automate_controller import AutomateController
 from teshi.models.jupyter_node_model import JupyterNodeModel
-from teshi.utils.ipynb_file_util import load_notebook, save_notebook, add_cell, remove_cell
 from teshi.views.widgets.automate_widget import NodeSketchpadView, NodeSketchpadScene, JupyterGraphNode
-from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.views.widgets.component.automate_connection_item import ConnectionItem
 from teshi.config.automate_editor_config import AutomateEditorConfig
 from teshi.views.widgets.automate_browser_widget import AutomateBrowserWidget
-from teshi.services.node_registry_service import NodeRegistryService
-from teshi.utils import graph_util
-from teshi.utils.yaml_graph_util import save_graph_to_yaml
 from teshi.views.widgets.component.python_highlighter import PythonHighlighter
 
 class RawCodeEditor(QTextEdit):
@@ -75,33 +70,28 @@ class AutomateModeWidget(QWidget):
     def __init__(self, file_path: str, parent=None):
         super().__init__(parent)
         self.file_path = file_path
-        # .ipynb path is same as source file but with .ipynb extension
-        self.notebook_path = str(Path(file_path).with_suffix('.ipynb'))
-        self.notebook_dir = str(Path(file_path).parent.resolve())
-
-        # Unique tab ID for this session (used for binding messages)
-        self.tab_id = str(uuid.uuid1())
-
-        self.notebook = None
+        
+        # Initialize Controller
+        self.controller = AutomateController(file_path, parent=self)
+        
+        # Connect Signals
+        self.controller.graph_loaded.connect(self.on_graph_loaded)
+        self.controller.node_added.connect(self.on_node_added)
+        self.controller.node_updated.connect(self.on_node_updated)
+        self.controller.node_removed.connect(self.on_node_removed)
+        self.controller.execution_status_changed.connect(self.on_execution_status_changed)
+        self.controller.execution_binding.connect(self.bind_item_msg_id)
+        
+        self.tab_id = self.controller.tab_id # Use controller's tab_id
+        
         self.scene = None
         self.view = None
         self.logger = get_logger()
 
-        self.thread1 = None
         self.parent_widget = parent
 
-        # Initialize Node Registry Service
-        # Try to find project root by looking for .teshi
-        project_root = self.notebook_dir
-        while project_root and project_root != str(Path(project_root).parent):
-            if  os.path.exists(os.path.join(project_root, '.teshi')):
-                break
-            project_root = str(Path(project_root).parent)
-        
-        self.node_registry = NodeRegistryService(project_root)
-
         self.setup_ui()
-        self.load_notebook_data()
+        self.controller.load_project() # Triggers graph_loaded
 
 
     def setup_ui(self):
@@ -131,7 +121,7 @@ class AutomateModeWidget(QWidget):
         # But 'notebook_dir' is usually just the folder of the current file.
         # Ideally we should use the parent project root if possible.
         # For now, let's use self.notebook_dir as a starting point.
-        self.browser_widget = AutomateBrowserWidget(self.notebook_dir, self.node_registry, self)
+        self.browser_widget = AutomateBrowserWidget(self.controller.notebook_dir, self.controller.node_registry, self)
         self.root_splitter.addWidget(self.browser_widget)
 
 
@@ -268,135 +258,104 @@ class AutomateModeWidget(QWidget):
         layout.addWidget(self.button_group)
 
 
-    def load_notebook_data(self):
-        # Update Browser widget
-        self.browser_widget.refresh_project_nodes()
+    @Slot()
+    def on_graph_loaded(self):
+        """Called when controller finishes loading the project data."""
+        # 1. Update Browser widget
+        # We need topological sort for the browser list. 
+        # Controller doesn't expose it directly yet, but we can compute it or ask controller.
+        # For now perform logic here as it's view-specific (display order).
+        # Actually, let's defer browser update until nodes are in scene or compute from controller nodes.
+        pass # Will do at end of function
 
-        # Ensure file exists, create empty if not
-        if not Path(self.notebook_path).exists():
-             self.create_empty_notebook()
-             
-        self.notebook = load_notebook(self.notebook_path)
-        
-        # Load items_data from ipynb metadata (legacy/fallback)
-        ipynb_items_data = self.notebook.metadata.get("scene_data", {})
-        
-        # Problem 3: Also try to load from YAML file (primary source for params)
-        yaml_path = str(Path(self.file_path).with_suffix('.yaml'))
-        yaml_graph_data = {}
-        if os.path.exists(yaml_path):
-            from teshi.utils.yaml_graph_util import load_graph_from_yaml
-            yaml_graph_data = load_graph_from_yaml(yaml_path)
-        
-        # Build items_data from YAML (keyed by title for compatibility)
-        yaml_items_data = {}
-        for node_info in yaml_graph_data.get('nodes', []):
-            title = node_info.get('title', '')
-            if title:
-                yaml_items_data[title] = {
-                    'x': node_info.get('pos', [0, 0])[0],
-                    'y': node_info.get('pos', [0, 0])[1],
-                    'params': node_info.get('params', {}),
-                    'node_type': node_info.get('node_type', ''),
-                    'uuid': node_info.get('id', '')
-                }
-        
-        # Merge: YAML takes priority for params/pos, ipynb for children/connections
-        items_data = {}
-        all_titles = set(ipynb_items_data.keys()) | set(yaml_items_data.keys())
-        for title in all_titles:
-            ipynb_item = ipynb_items_data.get(title, {})
-            yaml_item = yaml_items_data.get(title, {})
-            items_data[title] = {
-                'x': yaml_item.get('x', ipynb_item.get('x', 0)),
-                'y': yaml_item.get('y', ipynb_item.get('y', 0)),
-                'params': yaml_item.get('params', ipynb_item.get('params', {})),
-                'node_type': yaml_item.get('node_type', ipynb_item.get('node_type', '')),
-                'uuid': yaml_item.get('uuid', ipynb_item.get('uuid', '')),
-                'children': ipynb_item.get('children', []),  # Connections from ipynb
-            }
-
-        # Init Scene and View
+        # 2. Init Scene and View (if needed)
+        # We want to keep view if possible to preserve scroll, but refreshing scene is safer.
         self.scene = NodeSketchpadScene(self)
         self.view = NodeSketchpadView(self.scene, self)
         self.view.setAlignment(Qt.AlignCenter)
         
         # Add view to layout
-        # Clear previous if any
         if self.canvas_layout.count() > 0:
              self.canvas_layout.itemAt(0).widget().deleteLater()
         self.canvas_layout.addWidget(self.view)
-        
-        # Load Nodes from Notebook Cells
-        nodes = []
-        for cell in self.notebook.cells:
-            if cell.cell_type == 'code':
-                # First line as title
-                title = cell.source.split('\n')[0]
-                node_model = JupyterNodeModel(title, cell.source)
-                node_model.tab_id = self.tab_id
-                nodes.append(node_model)
-        
-        graph_nodes = {}
-        # Draw Nodes
-        # Basic layout strategy: Horizontal line if no position data
-        for index, node in enumerate(nodes):
-            if node.title in graph_nodes:
-                continue
-                
-            rect = JupyterGraphNode(node.title, node.code)
-            graph_nodes[node.title] = rect
-            
-            # Position
-            if node.title in items_data:
-                 rect.setPos(items_data[node.title]['x'], items_data[node.title]['y'])
-                 if 'params' in items_data[node.title]:
-                     rect.data_model.params = items_data[node.title]['params']
-                 
-                 # Problem 3: If YAML has node_type, try to load code from registry
-                 node_type = items_data[node.title].get('node_type')
-                 if node_type:
-                     rect.data_model.node_type = node_type
-                     registry_data = self.node_registry.get_node_data(node_type)
-                     if registry_data:
-                         rect.data_model.code = registry_data['code']
-                         # Important: If it's the first time, we might need to update title too
-                         # but title is already set from notebook cells loop above
-                 
-                 rect.update_input_widgets()
-            else:
-                 rect.setPos(index * 300, 0)
-            
-            # Register code if not already in registry
-            if rect.data_model.code:
-                node_type = self.node_registry.register_node(rect.data_model.title, rect.data_model.code)
-                rect.data_model.node_type = node_type
 
+        # 3. Draw Nodes from Controller
+        graph_nodes = {}
+        # Basic layout strategy: Horizontal line if no position data (handled in controller defaults)
+        for title, node_model in self.controller.nodes.items():
+            rect = JupyterGraphNode(node_model.title, node_model.code)
+            # Link the view item to the model object form controller
+            rect.data_model = node_model 
+            
+            rect.setPos(node_model.x, node_model.y)
+            # rect.update_input_widgets() # Called in init of node? No, let's call explicit
+            rect.update_input_widgets()
+            
+            # Connect signals
             rect.signals.nodeClicked.connect(self.update_widget)
             self.scene.addItem(rect)
-            
-        # Draw Connections
-        # "children" in scene_data are connections
-        for node_title, rect in graph_nodes.items():
-            if node_title in items_data:
-                data = items_data[node_title]
-                if 'children' in data:
-                    for child_title in data['children']:
-                        if child_title in graph_nodes:
-                            target_rect = graph_nodes[child_title]
-                            # Check if connection already exists to avoid dupes if data is messy
-                            existing = False
-                            for conn in rect.connections:
-                                if conn.destination == target_rect:
-                                    existing = True
-                                    break
-                            if not existing:
-                                connection = ConnectionItem(rect, target_rect)
-                                self.scene.addItem(connection)
-                                rect.add_connection(connection)
-                                target_rect.add_connection(connection)
+            graph_nodes[title] = rect
 
+        # 4. Draw Connections
+        for title, node_model in self.controller.nodes.items():
+            rect = graph_nodes[title]
+            for child_title in node_model.children:
+                if child_title in graph_nodes:
+                    target_rect = graph_nodes[child_title]
+                    connection = ConnectionItem(rect, target_rect)
+                    self.scene.addItem(connection)
+                    rect.add_connection(connection)
+                    target_rect.add_connection(connection)
+
+        # 5. Update Browser List
         self.update_browser_canvas_nodes()
+
+    @Slot(JupyterNodeModel)
+    def on_node_added(self, node_model):
+        rect = JupyterGraphNode(node_model.title, node_model.code)
+        rect.data_model = node_model
+        rect.setPos(node_model.x, node_model.y)
+        rect.update_input_widgets()
+        rect.signals.nodeClicked.connect(self.update_widget)
+        self.scene.addItem(rect)
+        self.update_browser_canvas_nodes()
+
+    @Slot(JupyterNodeModel)
+    def on_node_updated(self, node_model):
+        # find item by uuid
+        for item in self.scene.items():
+            if isinstance(item, JupyterGraphNode) and item.data_model.uuid == node_model.uuid:
+                # Update visual properties if needed
+                item.setPos(node_model.x, node_model.y)
+                if item.data_model.title != node_model.title:
+                    item.set_title_text(node_model.title)
+                # Code/Result updates are usually bound via data_model reference
+                # input widgets might need refresh
+                item.update_input_widgets()
+                item.update_input_widgets()
+                break
+
+    @Slot(str)
+    def on_node_removed(self, uuid):
+         for item in self.scene.items():
+            if isinstance(item, JupyterGraphNode) and item.data_model.uuid == uuid:
+                # Remove connections visuals first
+                for conn in item.connections.copy():
+                     if self.scene:
+                         self.scene.removeItem(conn)
+                
+                if self.scene:
+                    self.scene.removeItem(item)
+                break
+
+    @Slot(str, str)
+    def on_execution_status_changed(self, msg_id, status_str):
+        # Forward to internal logic that updates UI based on status
+        # We need to map msg_id to node
+        for item in self.scene.items():
+            if isinstance(item, JupyterGraphNode):
+                if getattr(item.data_model, 'msg_id', None) == msg_id:
+                     self._update_node_status(item, status_str)
 
     def update_browser_canvas_nodes(self):
         """Update the execution order list in the browser widget"""
@@ -412,11 +371,7 @@ class AutomateModeWidget(QWidget):
              print(f"Error updating canvas nodes list: {e}")
 
 
-    def create_empty_notebook(self):
-        import nbformat
-        nb = nbformat.v4.new_notebook()
-        with open(self.notebook_path, 'w', encoding='utf-8') as f:
-            nbformat.write(nb, f)
+
 
     def update_widget(self, data_model_dict):
         """Update side panel when a node is clicked"""
@@ -433,144 +388,13 @@ class AutomateModeWidget(QWidget):
         uuid = self.result_widget.toolTip()
         if not uuid:
             return
-            
-        for item in self.scene.items():
-            if isinstance(item, JupyterGraphNode):
-                if item.data_model.uuid == uuid:
-                    item.data_model.code = self.raw_code_widget.toPlainText()
-                    item.data_model.code_changed = True
-                    # Check if title changed (first line)
-                    new_title = item.data_model.code.split('\n')[0]
-                    if new_title != item.data_model.title:
-                        self.item_title_changed(item, new_title)
-                    
-                    # Register updated code
-                    node_type = self.node_registry.register_node(item.data_model.title, item.data_model.code)
-                    item.data_model.node_type = node_type
-                    
-                    self.save_notebook_file() # Auto save to file
-                    
-                    # Update original text to match saved version (prevent unsaved prompt)
-                    self.raw_code_widget.original_text = self.raw_code_widget.toPlainText()
-                    break
-
-    def item_title_changed(self, item, new_title):
-        old_title = item.data_model.title
         
-        # Update notebook cells
-        notebook_item_titles = [cell.source.split('\n')[0] for cell in self.notebook.cells if cell.cell_type == 'code']
-        if old_title in notebook_item_titles:
-             idx = notebook_item_titles.index(old_title)
-             self.notebook.cells[idx].source = item.data_model.code
-             
-        # Update connections references (children list in other nodes)
-        for scene_item in self.scene.items():
-            if isinstance(scene_item, JupyterGraphNode):
-                if old_title in scene_item.data_model.children:
-                    scene_item.data_model.children.remove(old_title)
-                    scene_item.data_model.children.append(new_title)
+        self.controller.update_node_code(uuid, self.raw_code_widget.toPlainText())
         
-        item.data_model.title = new_title
-        item._title = new_title
-        item.set_title_text(new_title)
+        # Update original text to match saved version (prevent unsaved prompt)
+        self.raw_code_widget.original_text = self.raw_code_widget.toPlainText()
 
-    def save_notebook_file(self):
-        """Sync scene to notebook and save file"""
-        # 1. Sync Logic (Add new nodes, remove deleted nodes, update code)
-        # Identify current nodes in scene
-        scene_nodes = {item.data_model.title: item for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        
-        # Identify current cells in notebook
-        notebook_cells = {cell.source.split('\n')[0]: cell for cell in self.notebook.cells if cell.cell_type == 'code'}
-        
-        # A. Add new nodes to notebook
-        for title, item in scene_nodes.items():
-            if title not in notebook_cells:
-                add_cell(self.notebook, item.data_model.code)
-                
-        # B. Remove deleted nodes from notebook
-        # Note: Removing while iterating needs care, better to rebuild list or use index
-        # Re-eval notebook cells list
-        current_titles = [cell.source.split('\n')[0] for cell in self.notebook.cells if cell.cell_type == 'code']
-        for title in current_titles:
-            if title not in scene_nodes:
-                # Find index
-                for i, cell in enumerate(self.notebook.cells):
-                    if cell.cell_type == 'code' and cell.source.split('\n')[0] == title:
-                        remove_cell(self.notebook, i)
-                        break
-                        
-        # C. Update code content
-        for i, cell in enumerate(self.notebook.cells):
-            if cell.cell_type == 'code':
-                title = cell.source.split('\n')[0]
-                if title in scene_nodes:
-                     item = scene_nodes[title]
-                     # If code changed in item but not saved to cell yet
-                     if item.data_model.code != cell.source:
-                         cell.source = item.data_model.code
 
-        self.update_browser_canvas_nodes()
-                         
-        # D. Update Scene Data (Metadata)
-        items_data = {item.data_model.title: item.to_dict() for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        self.notebook.metadata["scene_data"] = items_data
-        self.notebook.metadata["last_modified"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.notebook.metadata["last_modified_by"] = "Teshi Automate"
-        
-        save_notebook(self.notebook, self.notebook_path)
-
-        # E. Always sync to YAML file (same name as source but with .yaml extension)
-        # This stores node references and params separately from code
-        self.sync_to_yaml()
-
-    def sync_to_yaml(self):
-        """Sync current graph structure and params to YAML file (always alongside the test case)"""
-        # Generate yaml path from file_path (replace extension with .yaml)
-        yaml_path = str(Path(self.file_path).with_suffix('.yaml'))
-        
-        nodes_data = []
-        connections_data = []
-
-        # Nodes
-        for item in self.scene.items():
-            if isinstance(item, JupyterGraphNode):
-                 node_data = {
-                        "id": item.data_model.uuid,
-                        "title": item.data_model.title,
-                        "node_type": item.data_model.node_type, # Added for Problem 3
-                        "pos": [item.pos().x(), item.pos().y()],
-                        "params": item.data_model.params
-                    }
-                 nodes_data.append(node_data)
-
-                 # Ensure it is registered
-                 if item.data_model.code:
-                     self.node_registry.register_node(item.data_model.title, item.data_model.code)
-
-        # Connections
-        visited_conns = set()
-        for item in self.scene.items():
-             if isinstance(item, ConnectionItem):
-                  if item in visited_conns:
-                       continue
-                  visited_conns.add(item)
-                  
-                  conn_data = {
-                        "from": item.source.data_model.title,
-                        "to": item.destination.data_model.title
-                  }
-                  connections_data.append(conn_data)
-                  
-        graph_data = {
-            "nodes": nodes_data,
-            "connections": connections_data
-        }
-        
-        try:
-             save_graph_to_yaml(graph_data, yaml_path)
-        except Exception as e:
-             print(f"Failed to sync to YAML: {e}")
 
     def restore(self):
         for item in self.scene.items():
@@ -580,23 +404,8 @@ class AutomateModeWidget(QWidget):
                 item.data_model.last_status = ""
                 
     def run_all(self):
-        self.save_notebook_file() # Save before run
         self.restore()
-        
-        graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        
-        if self.thread1 is not None:
-             self.thread1.quit()
-             self.thread1.wait()
-             
-        self.thread1 = QtCore.QThread()
-        self.worker = GraphExecuteController(graph, nodes_data, self.notebook_dir, self.tab_id)
-        self.worker.moveToThread(self.thread1)
-        self.worker.executor_process.connect(self.update_process)
-        self.worker.executor_binding.connect(self.bind_item_msg_id)
-        self.thread1.started.connect(self.worker.execute_all)
-        self.thread1.start()
+        self.controller.run_all()
 
     def run_single_node_and_parent(self):
         selected_items = self.scene.selectedItems()
@@ -604,24 +413,10 @@ class AutomateModeWidget(QWidget):
             QMessageBox.information(self, "Info", "Please select a node first.")
             return
 
-        self.save_notebook_file()
         self.restore()
         
         target_node = selected_items[0]
-        graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        nodes_data = {item.data_model.title:[item.data_model.code, item.data_model.uuid, item.data_model.params] for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
-        
-        if self.thread1 is not None:
-             self.thread1.quit()
-             self.thread1.wait()
-             
-        self.thread1 = QtCore.QThread()
-        self.worker = GraphExecuteController(graph, nodes_data, self.notebook_dir, self.tab_id, target_node.data_model.title)
-        self.worker.moveToThread(self.thread1)
-        self.worker.executor_process.connect(self.update_process)
-        self.worker.executor_binding.connect(self.bind_item_msg_id)
-        self.thread1.started.connect(self.worker.execute_single_node_and_its_parents)
-        self.thread1.start()
+        self.controller.run_single(target_node.data_model.uuid)
 
     def bind_item_msg_id(self, binding):
         """Bind execution message ID to node UUID"""
@@ -643,31 +438,7 @@ class AutomateModeWidget(QWidget):
                 if item.data_model.uuid == item_id:
                     item.data_model.msg_id = msg_id
 
-    def update_process(self, process):
-        # format: msg_id:tab_id:status_info
-        # Actually logic in automate_engine.py is:
-        # parent_msg_id#tab_id:status:idle
-        
-        if "#" not in process:
-             self.logger.info(process)
-             return
-             
-        first_part = process.split(":")[0]
-        if "#" not in first_part: return
-        
-        msg_id, t_id = first_part.split("#")
-        
-        if t_id != self.tab_id: return
-        
-        # Remove prefix to get content
-        status_str = process[len(first_part)+1:]
-        
-        for item in self.scene.items():
-            if isinstance(item, JupyterGraphNode):
-                if getattr(item.data_model, 'msg_id', None) == msg_id:
-                     self._update_node_status(item, status_str)
-        
-        self.logger.info(process)
+
 
     def _update_node_status(self, item, status_str):
         if status_str == "status:busy":

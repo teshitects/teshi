@@ -283,6 +283,10 @@ class JupyterGraphNode(QGraphicsItem):
                 self.scene().addItem(connection)
                 self.connections.append(connection)
                 target_item.connections.append(connection)
+                
+                # Sync to controller
+                if self.scene() and self.scene().parent() and hasattr(self.scene().parent(), 'controller'):
+                    self.scene().parent().controller.add_connection(self.data_model.uuid, target_item.data_model.uuid)
 
 
         self.drag_mode = None

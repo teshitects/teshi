@@ -84,7 +84,11 @@ class NodeSketchpadScene(QGraphicsScene):
                 if isinstance(item, ConnectionItem):
                     item._disconnect()
                 elif isinstance(item,JupyterGraphNode):
-                    item.remove()
+                    # Delegate removal to controller if possible
+                    if self.parent() and hasattr(self.parent(), 'controller'):
+                        self.parent().controller.remove_node(item.data_model.uuid)
+                    else:
+                        item.remove() # Fallback
         super().keyPressEvent(event)
 
 class NodeSketchpadView(QGraphicsView):
@@ -146,32 +150,17 @@ class NodeSketchpadView(QGraphicsView):
             super().dropEvent(event)
 
     def add_node_on_drop(self, title, code, mouse_pos):
-        # Unique title check or suffix if needed?
-        # For now, simplistic approach:
-        # If title exists, we might want to append a number, but right_click_add_node logic 
-        # usually handles unique titles (User adds timestamp).
-        # But here we are dragging a "Template".
-        # Let's verify uniqueness or append suffix.
-        
+        # Calculate unique title
         final_title = title
         existing_titles = [item.data_model.title for item in self._scene.items() if isinstance(item, JupyterGraphNode)]
         if final_title in existing_titles:
-            # Append suffix
             i = 1
             while f"{title}_{i}" in existing_titles:
                 i += 1
             final_title = f"{title}_{i}"
             
-        item = JupyterGraphNode(final_title, code)
-        if self.father is not None:
-            item.signals.nodeClicked.connect(self.father.update_widget)
-        self._scene.addItem(item)
-        item.setPos(mouse_pos)
-        item.data_model.x = mouse_pos.x()
-        item.data_model.y = mouse_pos.y()
-        
-        # Trigger update of input widgets immediately just in case
-        # (Already called in __init__ of JupyterGraphNode)
+        if self.father and hasattr(self.father, 'controller'):
+            self.father.controller.add_node(final_title, code, (mouse_pos.x(), mouse_pos.y()))
 
     def copy_node_on_drop(self, source_title, mouse_pos):
         # Find source node
@@ -190,35 +179,17 @@ class NodeSketchpadView(QGraphicsView):
         final_title = base_title
         existing_titles = [item.data_model.title for item in self._scene.items() if isinstance(item, JupyterGraphNode)]
         
-        # Determine base name without existing numeric suffix if it looks like a copy?
-        # Or just append _copy or number.
-        # Requirement: "The created node... is equivalent to a copy" 
-        # Usually copies have new names to be unique in graph if titles must be unique.
-        # Assuming titles must be unique.
-        
         i = 1
         while final_title in existing_titles:
             final_title = f"{base_title}_{i}"
             i += 1
             
-        # Create new node with same code
-        new_node = JupyterGraphNode(final_title, source_node.data_model.code)
-        
         # Copy params
-        # IMPORTANT: We must deep copy params to avoid shared state if params are mutable objects
         import copy
-        new_node.data_model.params = copy.deepcopy(source_node.data_model.params)
+        params = copy.deepcopy(source_node.data_model.params)
         
-        # Refresh inputs to reflect copied params
-        new_node.update_input_widgets()
-        
-        if self.father is not None:
-            new_node.signals.nodeClicked.connect(self.father.update_widget)
-            
-        self._scene.addItem(new_node)
-        new_node.setPos(mouse_pos)
-        new_node.data_model.x = mouse_pos.x()
-        new_node.data_model.y = mouse_pos.y()
+        if self.father and hasattr(self.father, 'controller'):
+            self.father.controller.add_node(final_title, source_node.data_model.code, (mouse_pos.x(), mouse_pos.y()), params=params)
 
 
     def wheelEvent(self, event):
@@ -259,13 +230,6 @@ class NodeSketchpadView(QGraphicsView):
         self._drag_mode = False
 
     def right_click_add_node(self, title, mouse_pos):
-        item = JupyterGraphNode(title, title)
-        # add click event
-        father = self.father
-        if self.father is not None:
-            item.signals.nodeClicked.connect(self.father.update_widget)
-        self._scene.addItem(item)
-        item.setPos(mouse_pos)
-        item.data_model.x = mouse_pos.x()
-        item.data_model.y = mouse_pos.y()
+        if self.father and hasattr(self.father, 'controller'):
+            self.father.controller.add_node(title, title, (mouse_pos.x(), mouse_pos.y()))
 

@@ -12,7 +12,7 @@ class ConnectionItem(QGraphicsItem):
         super().__init__()
         self.source = source
         self.destination = destination
-        self.source.data_model.children.append(self.destination.data_model.title)
+        # self.source.data_model.children.append(self.destination.data_model.title) # Removed: Model update handled by controller to avoid infinite loop/duplication
 
         self.setZValue(-1)
 
