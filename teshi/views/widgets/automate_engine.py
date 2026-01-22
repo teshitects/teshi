@@ -3,6 +3,8 @@ import sys
 import uuid
 from pathlib import Path
 
+from teshi.utils.logger import get_logger
+
 from PySide6 import QtGui, QtWidgets, QtCore
 from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -25,6 +27,7 @@ class JupyterVisualRunner(QMainWindow):
         if self.recent_files is None:
             self.recent_files = []
         self.node_lib_manager = NodeLibManager()
+        self.logger = get_logger()
         self.setup_node_sketchpad()
         self.center()
         self.thread1 = None
@@ -217,7 +220,7 @@ class JupyterVisualRunner(QMainWindow):
         msg_id = binding.split(":")[0]
         tab_id = binding.split(":")[1].split("#")[0]
         item_id = binding.split(":")[1].split("#")[1]
-        self.logger_widget.append(binding)
+        self.logger.info(f"Binding: {binding}")
         for index in range(self.center_tabs.count()):
             tab_widget = self.center_tabs.widget(index)
             if getattr(tab_widget, 'tab_id', None) == tab_id:
@@ -267,7 +270,7 @@ class JupyterVisualRunner(QMainWindow):
 
 
                                 print(f"{datetime.datetime.now()} {item.data_model.title}: {status_str}")
-                    self.logger_widget.append(process)
+                    self.logger.info(process)
 
 
     def setup_node_sketchpad(self):
@@ -322,18 +325,7 @@ class JupyterVisualRunner(QMainWindow):
         self.addDockWidget(Qt.RightDockWidgetArea, result_dock)
 
 
-        dock3 = QDockWidget("Logger", self)
-        self.logger_widget = QTextEdit()
-        self.logger_widget.setReadOnly(True)
-        self.logger_widget.setLineWrapMode(QTextEdit.NoWrap)
-        self.logger_widget.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
-        # Solve problem: there is a blue line in the bottom of QTextEdit
-        # https://stackoverflow.com/questions/16436058/how-to-make-qtextedit-with-no-visible-border
-        self.logger_widget.setFrameStyle(QFrame.NoFrame)
-        dock3.setWidget(self.logger_widget)
-        dock3.setMinimumHeight(150)
-        self.addDockWidget(Qt.BottomDockWidgetArea, dock3)
-
+        
         button_group = QDockWidget("Button Group", self)
         button_group_widget = QWidget()
         button_group.setWidget(button_group_widget)

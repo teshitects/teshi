@@ -4,6 +4,8 @@ import uuid
 import datetime
 from pathlib import Path
 
+from teshi.utils.logger import get_logger
+
 from PySide6 import QtGui, QtWidgets, QtCore
 from PySide6.QtCore import QSettings, Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -76,13 +78,14 @@ class AutomateModeWidget(QWidget):
         # .ipynb path is same as source file but with .ipynb extension
         self.notebook_path = str(Path(file_path).with_suffix('.ipynb'))
         self.notebook_dir = str(Path(file_path).parent.resolve())
-        
+
         # Unique tab ID for this session (used for binding messages)
         self.tab_id = str(uuid.uuid1())
-        
+
         self.notebook = None
         self.scene = None
         self.view = None
+        self.logger = get_logger()
 
         self.thread1 = None
         self.parent_widget = parent
@@ -221,21 +224,10 @@ class AutomateModeWidget(QWidget):
         self.center_splitter.addWidget(self.canvas_container)
         self.center_splitter.addWidget(self.right_container)
         
-        # Logger Area
-        self.logger_container = QWidget()
-        self.logger_layout = QVBoxLayout(self.logger_container)
-        self.logger_layout.setContentsMargins(0, 0, 0, 0)
-        self.logger_layout.addWidget(QtWidgets.QLabel("Logger"))
-        self.logger_widget = QTextEdit()
-        self.logger_widget.setReadOnly(True)
-        self.logger_widget.setLineWrapMode(QTextEdit.NoWrap)
-        self.logger_widget.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
-        self.logger_widget.setFrameStyle(QFrame.NoFrame)
-        self.logger_layout.addWidget(self.logger_widget)
-        
+        # Logger removed - now logs to file
+
         # Add to Main Splitter
         self.main_splitter.addWidget(self.center_splitter)
-        self.main_splitter.addWidget(self.logger_container)
         
         # Add everything to root
         self.root_splitter.addWidget(self.main_splitter)
@@ -243,10 +235,10 @@ class AutomateModeWidget(QWidget):
         # Set default absolute sizes (pixel widths)
         # root_splitter: Browser (Left) vs Main (Right)
         self.root_splitter.setSizes([200, 1000])
-        
-        # main_splitter: Center Splitter (Top) vs Logger (Bottom)
-        self.main_splitter.setSizes([800, 200])
-        
+
+        # main_splitter: Center Splitter (now only one child)
+        self.main_splitter.setSizes([1000])
+
         # center_splitter: Canvas (Left) vs Right Side (Raw/Result)
         self.center_splitter.setSizes([850, 350])
         
@@ -644,7 +636,7 @@ class AutomateModeWidget(QWidget):
         
         if t_id != self.tab_id: return
         
-        self.logger_widget.append(f"Binding: {binding}")
+        self.logger.info(f"Binding: {binding}")
         
         for item in self.scene.items():
             if isinstance(item, JupyterGraphNode):
@@ -656,8 +648,8 @@ class AutomateModeWidget(QWidget):
         # Actually logic in automate_engine.py is:
         # parent_msg_id#tab_id:status:idle
         
-        if "#" not in process: 
-             self.logger_widget.append(process)
+        if "#" not in process:
+             self.logger.info(process)
              return
              
         first_part = process.split(":")[0]
@@ -675,7 +667,7 @@ class AutomateModeWidget(QWidget):
                 if getattr(item.data_model, 'msg_id', None) == msg_id:
                      self._update_node_status(item, status_str)
         
-        self.logger_widget.append(process)
+        self.logger.info(process)
 
     def _update_node_status(self, item, status_str):
         if status_str == "status:busy":
