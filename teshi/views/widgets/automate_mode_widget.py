@@ -23,6 +23,45 @@ from teshi.views.widgets.automate_browser_widget import AutomateBrowserWidget
 from teshi.services.node_registry_service import NodeRegistryService
 from teshi.utils import graph_util
 from teshi.utils.yaml_graph_util import save_graph_to_yaml
+from teshi.views.widgets.component.python_highlighter import PythonHighlighter
+
+class RawCodeEditor(QTextEdit):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.original_text = ""
+        self.save_btn_ref = None
+
+    def set_text_with_original(self, text):
+        self.setPlainText(text)
+        self.original_text = text
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        # Check if content changed
+        if self.toPlainText() != self.original_text:
+            # Defer check to allow focus to settle (e.g. if moving to Save button)
+            QtCore.QTimer.singleShot(50, self.check_abandon)
+
+    def check_abandon(self):
+        # If focus moved to the save button, don't show dialog
+        if self.save_btn_ref and QApplication.focusWidget() == self.save_btn_ref:
+            return
+            
+        # If we are not visible (e.g. tab switch hidden us), maybe skip?
+        # But requirement says "lose focus".
+        
+        reply = QMessageBox.question(
+            self, 
+            "Unsaved Changes", 
+            "You have unsaved changes. Abandon modifications?", 
+            QMessageBox.Yes | QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.setPlainText(self.original_text)
+        else:
+            self.setFocus()
+
 
 class AutomateModeWidget(QWidget):
     """
@@ -113,11 +152,43 @@ class AutomateModeWidget(QWidget):
         
         # Raw Code Area
         self.right_layout.addWidget(QtWidgets.QLabel("Raw Code"))
-        self.raw_code_widget = QTextEdit()
+        
+        # Container for Raw Code + Save Button (Overlay or Layout)
+        # Using a layout approach: Editor takes expanding space, Button at bottom right
+        self.raw_code_container = QWidget()
+        self.raw_code_container_layout = QVBoxLayout(self.raw_code_container)
+        self.raw_code_container_layout.setContentsMargins(0, 0, 0, 0)
+        self.raw_code_container_layout.setSpacing(2)
+        
+        self.raw_code_widget = RawCodeEditor()
         self.raw_code_widget.setLineWrapMode(QTextEdit.NoWrap)
         self.raw_code_widget.setFont(AutomateEditorConfig.node_title_font)
+        # Dark styling for code editor
+        self.raw_code_widget.setStyleSheet(f"background-color: {AutomateEditorConfig.scene_background_color}; color: white;")
+        
+        # Attach Syntax Highlighter
+        self.highlighter = PythonHighlighter(self.raw_code_widget.document())
+        
         self.raw_code_widget.textChanged.connect(self._trigger_workspace_save)
-        self.right_layout.addWidget(self.raw_code_widget)
+        
+        self.raw_code_container_layout.addWidget(self.raw_code_widget)
+        
+        # Save Button Layout (Right Aligned)
+        self.save_code_layout = QHBoxLayout()
+        self.save_code_layout.addStretch()
+        
+        self.save_code_button = QPushButton("Save Code")
+        self.save_code_button.setCursor(Qt.PointingHandCursor)
+        # Connect later or here? Connected in separate block before, do it here to ensure ref availability
+        self.save_code_button.clicked.connect(self.update_graph_node_code)
+        
+        self.save_code_layout.addWidget(self.save_code_button)
+        self.raw_code_container_layout.addLayout(self.save_code_layout)
+        
+        # Link button ref to editor for focus check
+        self.raw_code_widget.save_btn_ref = self.save_code_button
+        
+        self.right_layout.addWidget(self.raw_code_container)
 
         
         # Result Area
@@ -168,8 +239,6 @@ class AutomateModeWidget(QWidget):
         self.button_layout = QHBoxLayout(self.button_group)
         self.button_layout.setContentsMargins(5, 5, 5, 5)
         
-        save_code_button = QPushButton("Save Code")
-        save_code_button.clicked.connect(self.update_graph_node_code)
         
         run_single_node_button = QPushButton("Run Single")
         run_single_node_button.clicked.connect(self.run_single_node_and_parent)
@@ -180,7 +249,7 @@ class AutomateModeWidget(QWidget):
         restore_button = QPushButton("Restore Status")
         restore_button.clicked.connect(self.restore)
         
-        self.button_layout.addWidget(save_code_button)
+        # self.button_layout.addWidget(save_code_button) # Removed, moved to Raw Code area
         self.button_layout.addWidget(run_single_node_button)
         self.button_layout.addWidget(run_button)
         self.button_layout.addWidget(restore_button)
@@ -341,7 +410,7 @@ class AutomateModeWidget(QWidget):
 
     def update_widget(self, data_model_dict):
         """Update side panel when a node is clicked"""
-        self.raw_code_widget.setText(data_model_dict["code"])
+        self.raw_code_widget.set_text_with_original(data_model_dict["code"])
         self.result_widget.setText(data_model_dict.get("result", ""))
         # set uuid in tooltip to identify which node is selected
         self.result_widget.setToolTip(data_model_dict['uuid'])
@@ -370,6 +439,9 @@ class AutomateModeWidget(QWidget):
                     item.data_model.node_type = node_type
                     
                     self.save_notebook_file() # Auto save to file
+                    
+                    # Update original text to match saved version (prevent unsaved prompt)
+                    self.raw_code_widget.original_text = self.raw_code_widget.toPlainText()
                     break
 
     def item_title_changed(self, item, new_title):
