@@ -7,7 +7,6 @@ from typing import Dict, List, Optional
 from PySide6.QtCore import QObject, Signal, QThread
 
 from teshi.models.jupyter_node_model import JupyterNodeModel
-from teshi.utils.ipynb_file_util import load_notebook, save_notebook, add_cell, remove_cell
 from teshi.utils.yaml_graph_util import save_graph_to_yaml, load_graph_from_yaml
 from teshi.utils import graph_util
 from teshi.services.node_registry_service import NodeRegistryService
@@ -33,7 +32,6 @@ class AutomateController(QObject):
     def __init__(self, file_path: str, parent=None):
         super().__init__(parent)
         self.file_path = file_path
-        self.notebook_path = str(Path(file_path).with_suffix('.ipynb'))
         self.notebook_dir = str(Path(file_path).parent.resolve())
         self.tab_id = str(uuid.uuid1())
         self.logger = get_logger()
@@ -44,8 +42,6 @@ class AutomateController(QObject):
         # To maintain compatibility with existing files/format, we might need to keep using Title for implementation details
         # but try to shift to UUID where possible. 
         # For now, let's keep the model objects which have both.
-        
-        self.notebook = None
         
         # Execution State
         self.thread: Optional[QThread] = None
@@ -63,21 +59,12 @@ class AutomateController(QObject):
         self.node_registry = NodeRegistryService(project_root)
 
     def load_project(self):
-        """Load the project data from ipynb and yaml files."""
-        # 1. Ensure notebook exists
-        self._ensure_notebook_exists()
-        
-        # 2. Load notebook
-        self.notebook = load_notebook(self.notebook_path)
-        
-        # 3. Load YAML data
+        """Load the project data from yaml files."""
+        # 1. Load YAML data
         yaml_path = str(Path(self.file_path).with_suffix('.yaml'))
         yaml_graph_data = load_graph_from_yaml(yaml_path)
         
-        # 4. Load Metadata from Notebook (Legacy)
-        ipynb_items_data = self.notebook.metadata.get("scene_data", {})
-        
-        # 5. Build consolidated internal state
+        # 2. Build consolidated internal state
         # Helper to index YAML nodes by Title
         yaml_items_data = {}
         for node_info in yaml_graph_data.get('nodes', []):
@@ -94,91 +81,43 @@ class AutomateController(QObject):
         # Clear current nodes
         self.nodes = {}
         
-        # Parse Notebook Cells -> Nodes
-        notebook_nodes = []
-        for cell in self.notebook.cells:
-            if cell.cell_type == 'code':
-                title = cell.source.split('\n')[0]
-                node_model = JupyterNodeModel(title, cell.source)
-                node_model.tab_id = self.tab_id
-                notebook_nodes.append(node_model)
-        
         # Apply Metadata to Nodes
-        for node in notebook_nodes:
-            # Metadata priority: YAML > IPynb
-            yaml_item = yaml_items_data.get(node.title, {})
-            ipynb_item = ipynb_items_data.get(node.title, {})
+        for title, yaml_item in yaml_items_data.items():
+            # Create node model
+            node = JupyterNodeModel(title, '')
+            node.tab_id = self.tab_id
             
-            node.x = yaml_item.get('x', ipynb_item.get('x', 0))
-            node.y = yaml_item.get('y', ipynb_item.get('y', 0))
-            node.params = yaml_item.get('params', ipynb_item.get('params', {}))
-            node.node_type = yaml_item.get('node_type', ipynb_item.get('node_type', ''))
-            node.uuid = yaml_item.get('uuid', ipynb_item.get('uuid', str(uuid.uuid4())))
+            node.x = yaml_item.get('x', 0)
+            node.y = yaml_item.get('y', 0)
+            node.params = yaml_item.get('params', {})
+            node.node_type = yaml_item.get('node_type', '')
+            node.uuid = yaml_item.get('uuid', str(uuid.uuid4()))
             
             # Now we have the UUID, we can use it as key
             self.nodes[node.uuid] = node
             
-            # Connections (Children) come from IPynb metadata usually, or YAML
-            node.children = ipynb_item.get('children', [])
-
             # Load code from registry if needed
             if node.node_type:
                 registry_data = self.node_registry.get_node_data(node.node_type)
                 if registry_data:
                     node.code = registry_data['code']
+        
+        # Build connections from YAML
+        for connection in yaml_graph_data.get('connections', []):
+            from_title = connection.get('from', '')
+            to_title = connection.get('to', '')
+            if from_title and to_title:
+                for node in self.nodes.values():
+                    if node.title == from_title:
+                        if to_title not in node.children:
+                            node.children.append(to_title)
+                        break
                 
         # Emit Loaded Signal
         self.graph_loaded.emit()
 
-    def _ensure_notebook_exists(self):
-        if not Path(self.notebook_path).exists():
-            import nbformat
-            nb = nbformat.v4.new_notebook()
-            with open(self.notebook_path, 'w', encoding='utf-8') as f:
-                nbformat.write(nb, f)
-
     def save_project(self):
-        """Save state to notebook and YAML."""
-        if not self.notebook:
-            return
-
-        # 1. Sync Logic (Nodes to Notebook Cells)
-        current_titles = [cell.source.split('\n')[0] for cell in self.notebook.cells if cell.cell_type == 'code']
-        node_titles = [node.title for node in self.nodes.values()]
-        
-        # A. Add new nodes
-        for node in self.nodes.values():
-            if node.title not in current_titles:
-                add_cell(self.notebook, node.code)
-        
-        # B. Remove deleted nodes
-        # We need to iterate backwards to remove safely
-        for i in range(len(self.notebook.cells) - 1, -1, -1):
-            cell = self.notebook.cells[i]
-            if cell.cell_type == 'code':
-                title = cell.source.split('\n')[0]
-                if title not in node_titles:
-                    remove_cell(self.notebook, i)
-
-        # C. Update code content
-        for cell in self.notebook.cells:
-            if cell.cell_type == 'code':
-                title = cell.source.split('\n')[0]
-                # Find node by title (since notebook only has titles)
-                node = next((n for n in self.nodes.values() if n.title == title), None)
-                if node:
-                    if node.code != cell.source:
-                        cell.source = node.code
-
-        # D. Update Metadata (IPynb)
-        items_data = {node.title: node.to_dict() for node in self.nodes.values()}
-        self.notebook.metadata["scene_data"] = items_data
-        self.notebook.metadata["last_modified"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.notebook.metadata["last_modified_by"] = "Teshi Automate"
-        
-        save_notebook(self.notebook, self.notebook_path)
-
-        # E. Sync to YAML
+        """Save state to YAML."""
         self._sync_to_yaml()
 
     def _sync_to_yaml(self):
