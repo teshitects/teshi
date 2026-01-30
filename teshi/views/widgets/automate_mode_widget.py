@@ -282,7 +282,7 @@ class AutomateModeWidget(QWidget):
         # 3. Draw Nodes from Controller
         graph_nodes = {}
         # Basic layout strategy: Horizontal line if no position data (handled in controller defaults)
-        for title, node_model in self.controller.nodes.items():
+        for uuid, node_model in self.controller.nodes.items():
             rect = JupyterGraphNode(node_model.title, node_model.code)
             # Link the view item to the model object form controller
             rect.data_model = node_model 
@@ -294,14 +294,14 @@ class AutomateModeWidget(QWidget):
             # Connect signals
             rect.signals.nodeClicked.connect(self.update_widget)
             self.scene.addItem(rect)
-            graph_nodes[title] = rect
+            graph_nodes[uuid] = rect
 
         # 4. Draw Connections
-        for title, node_model in self.controller.nodes.items():
-            rect = graph_nodes[title]
-            for child_title in node_model.children:
-                if child_title in graph_nodes:
-                    target_rect = graph_nodes[child_title]
+        for uuid, node_model in self.controller.nodes.items():
+            rect = graph_nodes[uuid]
+            for child_uuid in node_model.children:
+                if child_uuid in graph_nodes:
+                    target_rect = graph_nodes[child_uuid]
                     connection = ConnectionItem(rect, target_rect)
                     self.scene.addItem(connection)
                     rect.add_connection(connection)
@@ -360,13 +360,17 @@ class AutomateModeWidget(QWidget):
     def update_browser_canvas_nodes(self):
         """Update the execution order list in the browser widget"""
         try:
-             # Build graph for topo sort
-             graph = {item.data_model.title: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
+             # Build graph for topo sort (using UUIDs)
+             graph = {item.data_model.uuid: item.data_model.children for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
              
-             # Calculate topological order
-             topo_order = graph_util.topological_sort(graph)
+             # Calculate topological order (UUIDs)
+             topo_order_uuids = graph_util.topological_sort(graph)
              
-             self.browser_widget.update_canvas_nodes(topo_order)
+             # Map back to Titles for display
+             uuid_to_title = {item.data_model.uuid: item.data_model.title for item in self.scene.items() if isinstance(item, JupyterGraphNode)}
+             topo_order_titles = [uuid_to_title.get(uuid, "Unknown") for uuid in topo_order_uuids]
+
+             self.browser_widget.update_canvas_nodes(topo_order_titles)
         except Exception as e:
              print(f"Error updating canvas nodes list: {e}")
 

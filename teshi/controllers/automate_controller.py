@@ -104,14 +104,13 @@ class AutomateController(QObject):
         
         # Build connections from YAML
         for connection in yaml_graph_data.get('connections', []):
-            from_title = connection.get('from', '')
-            to_title = connection.get('to', '')
-            if from_title and to_title:
-                for node in self.nodes.values():
-                    if node.title == from_title:
-                        if to_title not in node.children:
-                            node.children.append(to_title)
-                        break
+            from_uuid = connection.get('from', '')
+            to_uuid = connection.get('to', '')
+            
+            if from_uuid in self.nodes and to_uuid in self.nodes:
+                source_node = self.nodes[from_uuid]
+                if to_uuid not in source_node.children:
+                    source_node.children.append(to_uuid)
                 
         # Emit Loaded Signal
         self.graph_loaded.emit()
@@ -126,7 +125,14 @@ class AutomateController(QObject):
         nodes_data = []
         connections_data = []
         
+        # Helper set for validation
+        # all_titles = {n.title for n in self.nodes.values()} # No longer needed for validation
+
         for node in self.nodes.values():
+            # Register node to ensure type is up to date
+            if node.code:
+                node.node_type = self.node_registry.register_node(node.title, node.code)
+
             node_data = {
                 "id": node.uuid,
                 "title": node.title,
@@ -136,18 +142,14 @@ class AutomateController(QObject):
             }
             nodes_data.append(node_data)
             
-            # Register node
-            if node.code:
-                self.node_registry.register_node(node.title, node.code)
-                
             # Connections
-            # Model stores children as list of titles. 
-            # We need to ensure we export "from -> to" based on this children list.
-            for child_title in node.children:
-                if child_title in self.nodes:
+            # Model stores children as list of UUIDs. 
+            # We export "from -> to" using UUIDs.
+            for child_uuid in node.children:
+                if child_uuid in self.nodes:
                      connections_data.append({
-                         "from": node.title,
-                         "to": child_title
+                         "from": node.uuid,
+                         "to": child_uuid
                      })
 
         graph_data = {
@@ -182,10 +184,10 @@ class AutomateController(QObject):
         if not node: return
         
         # Remove connections where this node is child (source -> this)
-        title = node.title
+        # title = node.title
         for other in self.nodes.values():
-            if title in other.children:
-                other.children.remove(title)
+            if uuid in other.children:
+                other.children.remove(uuid)
         
         # Remove from nodes
         del self.nodes[uuid]
@@ -213,14 +215,8 @@ class AutomateController(QObject):
         self.save_project()
 
     def rename_node(self, node: JupyterNodeModel, new_title: str):
-        old_title = node.title
-        
-        # Update references in other nodes' children
-        for other_node in self.nodes.values():
-            if old_title in other_node.children:
-                other_node.children.remove(old_title)
-                other_node.children.append(new_title)
-        
+        # old_title = node.title
+        # Since connections use UUIDs, we don't need to update other nodes' children lists.
         node.title = new_title
 
     def update_node_params(self, uuid: str, params: dict):
@@ -244,16 +240,16 @@ class AutomateController(QObject):
         source = self._get_node_by_uuid(from_uuid)
         target = self._get_node_by_uuid(to_uuid)
         if source and target:
-            if target.title not in source.children:
-                source.children.append(target.title)
+            if target.uuid not in source.children:
+                source.children.append(target.uuid)
                 self.save_project()
 
     def remove_connection(self, from_uuid: str, to_uuid: str):
         source = self._get_node_by_uuid(from_uuid)
         target = self._get_node_by_uuid(to_uuid)
         if source and target:
-             if target.title in source.children:
-                 source.children.remove(target.title)
+             if target.uuid in source.children:
+                 source.children.remove(target.uuid)
                  self.save_project()
 
     def _get_node_by_uuid(self, uuid: str) -> Optional[JupyterNodeModel]:
@@ -266,10 +262,10 @@ class AutomateController(QObject):
         self.save_project()
         
         # Build strict dicts for Executor (it expects specific formats)
-        # Graph: {title: [children_titles]}
-        graph = {node.title: node.children for node in self.nodes.values()}
-        # Nodes Data: {title: [code, uuid, params]}
-        nodes_data = {node.title: [node.code, node.uuid, node.params] for node in self.nodes.values()}
+        # Graph: {uuid: [children_uuids]}
+        graph = {node.uuid: node.children for node in self.nodes.values()}
+        # Nodes Data: {uuid: [code, uuid, params]}
+        nodes_data = {node.uuid: [node.code, node.uuid, node.params] for node in self.nodes.values()}
         
         self._start_execution(graph, nodes_data)
 
@@ -279,10 +275,10 @@ class AutomateController(QObject):
         target_node = self._get_node_by_uuid(uuid)
         if not target_node: return
 
-        graph = {node.title: node.children for node in self.nodes.values()}
-        nodes_data = {node.title: [node.code, node.uuid, node.params] for node in self.nodes.values()}
+        graph = {node.uuid: node.children for node in self.nodes.values()}
+        nodes_data = {node.uuid: [node.code, node.uuid, node.params] for node in self.nodes.values()}
         
-        self._start_execution(graph, nodes_data, single_node_title=target_node.title)
+        self._start_execution(graph, nodes_data, single_node_title=target_node.uuid)
 
     def _start_execution(self, graph, nodes_data, single_node_title=None):
         if self.thread is not None:

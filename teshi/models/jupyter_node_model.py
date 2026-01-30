@@ -4,7 +4,7 @@ class JupyterNodeModel(object):
         self.code = code
         self.source = None
         self.destination = None
-        self.children = []
+        self.children = [] # List of child UUIDs
         self.x = 0
         self.y = 0
         self.uuid = None

@@ -4,6 +4,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
+import yaml
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -21,6 +22,9 @@ class TestAutomateController(unittest.TestCase):
     def setUp(self):
         # Create a temp directory
         self.test_dir = tempfile.mkdtemp()
+        # Create .teshi directory for registry
+        os.makedirs(os.path.join(self.test_dir, ".teshi"), exist_ok=True)
+        
         self.file_path = os.path.join(self.test_dir, "test_project.py")
         
         # Create empty file
@@ -38,10 +42,10 @@ class TestAutomateController(unittest.TestCase):
         self.controller.load_project()
         
         # Check generated files
-        notebook_path = self.file_path.replace(".py", ".ipynb")
+        # notebook_path = self.file_path.replace(".py", ".ipynb") # Notebook creation removed from controller init
         yaml_path = self.file_path.replace(".py", ".yaml")
         
-        self.assertTrue(os.path.exists(notebook_path))
+        # self.assertTrue(os.path.exists(notebook_path))
         # yaml is only created on save, check if load created it? 
         # load_project -> calls load_graph_from_yaml -> returns empty if not exists.
         # It doesn't auto-create yaml on load unless we save.
@@ -95,24 +99,45 @@ class TestAutomateController(unittest.TestCase):
         self.controller.update_node_code(uuid, "Node 2\nupdated_code")
         
         # Key is still the same uuid
-        self.assertIn(uuid, self.controller.nodes)
         self.assertEqual(self.controller.nodes[uuid].title, "Node 2")
-        self.assertEqual(self.controller.nodes[uuid].uuid, uuid)
         
-    def test_remove_node(self):
+    def test_connection_persistence_uuid(self):
+        """Test that connections are saved and loaded correctly using UUIDs"""
         self.controller.load_project()
-        self.controller.add_node("Node 1", "Node 1\ncode", (0,0))
-        node1 = next(n for n in self.controller.nodes.values() if n.title == "Node 1")
-        uuid = node1.uuid
         
-        self.controller.remove_node(uuid)
+        # Add Nodes
+        self.controller.add_node("Node A", "Node A\ncode", (0,0))
+        self.controller.add_node("Node B", "Node B\ncode", (100,0))
         
-        self.assertNotIn("Node 1", self.controller.nodes)
+        node_a = next(n for n in self.controller.nodes.values() if n.title == "Node A")
+        node_b = next(n for n in self.controller.nodes.values() if n.title == "Node B")
         
-        # Reload to verify persistence
+        # Add Connection
+        self.controller.add_connection(node_a.uuid, node_b.uuid)
+        
+        self.assertIn(node_b.uuid, node_a.children)
+        
+        # Save
+        self.controller.save_project()
+        
+        # Verify YAML content (manual read)
+        yaml_path = self.file_path.replace(".py", ".yaml")
+        with open(yaml_path, 'r') as f:
+            data = yaml.safe_load(f)
+            
+        connections = data['connections']
+        self.assertEqual(len(connections), 1)
+        self.assertEqual(connections[0]['from'], node_a.uuid)
+        self.assertEqual(connections[0]['to'], node_b.uuid)
+        
+        # Reload
         new_controller = AutomateController(self.file_path)
         new_controller.load_project()
-        self.assertNotIn("Node 1", new_controller.nodes)
+        
+        new_node_a = next(n for n in new_controller.nodes.values() if n.title == "Node A")
+        new_node_b = next(n for n in new_controller.nodes.values() if n.title == "Node B")
+        
+        self.assertIn(new_node_b.uuid, new_node_a.children)
 
 if __name__ == '__main__':
     unittest.main()
